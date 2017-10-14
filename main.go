@@ -27,6 +27,8 @@ var (
 		magickBins     string
 		useImageMagick bool
 	}{}
+
+	gDebugPrintsEnabled = true
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -46,6 +48,9 @@ func hdrToJpegWorker(workerId int, jobs <-chan *hdrToJpegJob, wg *sync.WaitGroup
 		cmd := exec.Command(path.Join(CLI.magickBins, "convert"), job.source, job.destination)
 		if _, err := cmd.CombinedOutput(); err != nil {
 			log.Printf("Warning: `convert %s %s` had error: %s", job.source, job.destination, err.Error())
+		}
+		if gDebugPrintsEnabled {
+			log.Printf("Wrote file : %s\n", job.destination)
 		}
 		wg.Done()
 	}
@@ -67,13 +72,16 @@ func main() {
 	// primitive to wait on all jobs finishing before terminating the app.
 	var wg sync.WaitGroup
 
-	// Get all files we care about ...
+	log.Printf("Building file list ... (this can take a while on large mounted dirs) ...\n")
 	files := []string{}
 	fatalOnErr(filepath.Walk(CLI.inputDir, func(fp string, fi os.FileInfo, err error) error {
 		if err != nil {
 			log.Printf("Warning found error walking dir. Error: %s\n", err.Error())
 		} else {
 			if strings.ToLower(path.Ext(fp)) == ".hdr" {
+				if gDebugPrintsEnabled {
+					log.Printf("Found file : %s\n", fp)
+				}
 				files = append(files, fp)
 			}
 		}

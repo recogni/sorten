@@ -16,6 +16,13 @@ Or grab the latest release from the [releases](https://github.com/recogni/sorten
 
 You will also need `imagemagick` installed on your system.  Modern versions of imagemagick will break apart the binary into separate sub-components like `convert`, `compose` and so on.  If you have installed this to a non-standard path, you can set the path to the binaries using the `--magic` option in the command line.
 
+## Cross compile
+
+```
+$ cd $GOPATH/src/github.com/recogni/sorten
+$ GOOS=linux go build -o sorten_linux .
+```
+
 ## Usage(s?)
 
 ```
