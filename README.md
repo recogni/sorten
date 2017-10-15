@@ -2,7 +2,7 @@
 
 A helper utility to transform data representations for deep learning input.
 
-## Rational
+## Rationale
 
 Given a directory of many input files which can be `.jpeg`, `.hdr` and so on, we need an easy way to convert as quickly as possible, all of these images and outputs into more malleable / desirable formats for learning and what-not.  The intention of this is to take advantage of ridiculous CPU and memory offerings from cloud providers while mounting and transforming data stored in google buckets (for example).
 
