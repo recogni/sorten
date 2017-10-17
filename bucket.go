@@ -73,6 +73,14 @@ func newBucketManager(bucketName string) (*bucketManager, error) {
 	}, nil
 }
 
+func (bm *bucketManager) bucketUpload(dst *bucketPath, data []byte) error {
+	wc := bm.client.Bucket(dst.bucket).Object(dst.subpath).NewWriter(bm.ctxt)
+	defer wc.Close()
+
+	_, err := wc.Write(data)
+	return err
+}
+
 func (bm *bucketManager) bucketUploadFile(dst *bucketPath, src string) error {
 	f, err := os.Open(src)
 	if err != nil {
@@ -84,7 +92,6 @@ func (bm *bucketManager) bucketUploadFile(dst *bucketPath, src string) error {
 	if _, err := io.Copy(wc, f); err != nil {
 		return err
 	}
-
 	return wc.Close()
 }
 
@@ -116,7 +123,6 @@ func (bm *bucketManager) bucketDownloadFile(dst string, src *bucketPath) error {
 	if _, err := io.Copy(f, rc); err != nil {
 		return err
 	}
-
 	return rc.Close()
 }
 

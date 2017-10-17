@@ -8,12 +8,15 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/recogni/tfutils"
 
 	"google.golang.org/api/iterator"
 )
@@ -46,24 +49,33 @@ var j2tfFactory = &jpegToTfRecordNameFactory{recordCount: 0}
 // jpegToTfRecordStatus keeps track of a single workers status for a
 // given running job.
 type jpegToTfRecordStatus struct {
-	workerId int      // id of the worker that made this file
-	tfdst    string   // output record file name
-	count    int      // number of records that we have seen so far
-	files    []string // files that we have converted so far
+	writer     *tfutils.RecordWriter
+	writerFile string   // path to the writer's file, if tfdst is local, this is tfdst
+	workerId   int      // id of the worker that made this file
+	tfdst      string   // output record path name
+	count      int      // number of records that we have seen so far
+	files      []string // files that we have converted so far
 }
 
 func newJpegToTfRecordStatus(wId int, dst string) *jpegToTfRecordStatus {
-	return &jpegToTfRecordStatus{
-		workerId: wId,
-		tfdst:    dst,
-		count:    0,
-		files:    []string{},
+	writerOutFile := dst
+	if isBucketPath(dst) {
+		writerOutFile = path.Join(os.TempDir(), fmt.Sprintf("worker_%d.tfrecord", wId))
 	}
-}
 
-func (js *jpegToTfRecordStatus) AddFile(file string) {
-	js.count += 1
-	js.files = append(js.files, file)
+	w, err := tfutils.NewWriter(writerOutFile, nil)
+	if err != nil {
+		panic(err)
+	}
+
+	return &jpegToTfRecordStatus{
+		writer:     w,
+		writerFile: writerOutFile,
+		workerId:   wId,
+		tfdst:      dst,
+		count:      0,
+		files:      []string{},
+	}
 }
 
 func (js *jpegToTfRecordStatus) Marshal() []byte {
@@ -79,9 +91,39 @@ File List:
 	return []byte(ret)
 }
 
-func (js *jpegToTfRecordStatus) Flush() {
-	bs := js.Marshal()
-	fmt.Printf("%s\n", string(bs))
+func (js *jpegToTfRecordStatus) AddFile(file string) {
+	// TODO: Download and write file here!
+	js.writer.WriteRecord([]byte("hello this is a test"))
+
+	js.count += 1
+	js.files = append(js.files, file)
+}
+
+func (js *jpegToTfRecordStatus) Flush() error {
+	if js == nil || js.count == 0 {
+		return nil
+	}
+
+	// If the destination file is a bucket path, we upload the intermediate
+	// file to the expected destination.
+	ext := path.Ext(js.tfdst)
+	if isBucketPath(js.tfdst) {
+		bp, _ := newBucketPath(js.tfdst)
+		bm := getBucketManager(bp.bucket)
+		err := bm.bucketUploadFile(bp, js.writerFile)
+		if err != nil {
+			fmt.Printf("Warning, unable to upload file %s\n", js.tfdst)
+		}
+
+		metaFile := strings.Replace(js.tfdst, ext, ".metadata", -1)
+		bp, _ = newBucketPath(metaFile)
+		bm.bucketUpload(bp, js.Marshal())
+	} else {
+		metaFile := strings.Replace(js.tfdst, ext, ".metadata", -1)
+		ioutil.WriteFile(metaFile, js.Marshal(), 0600)
+	}
+
+	return nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -101,13 +143,9 @@ func jpegToTfRecordWorker(workerId int, fileq <-chan string, updates chan<- *wor
 			status = newJpegToTfRecordStatus(workerId, dstfp)
 
 			setUpdate(updates, workerId, "Got a new record (%s)", status.tfdst)
-			time.Sleep(1 * time.Second)
 		}
 
 		setUpdate(updates, workerId, "got file from queue: %s", file)
-
-		// TODO: Add stuff to the writer!
-		time.Sleep(1 * time.Second)
 
 		// Once we have added this file to the record, tag it in the status.
 		status.AddFile(file)
@@ -118,9 +156,6 @@ func jpegToTfRecordWorker(workerId int, fileq <-chan string, updates chan<- *wor
 		if status.count == CLI.filesPerRecord {
 			status.Flush()
 			status = nil
-
-			setUpdate(updates, workerId, "Flushing status! (%s)", status.tfdst)
-			time.Sleep(1 * time.Second)
 		}
 
 		// Job done, tag the workgroup and check for more work.
@@ -132,6 +167,7 @@ func jpegToTfRecordWorker(workerId int, fileq <-chan string, updates chan<- *wor
 	// as complete.
 	if status != nil {
 		status.Flush()
+		status = nil
 	}
 	wg.Done()
 }
