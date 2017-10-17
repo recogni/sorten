@@ -12,7 +12,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"sync"
 
 	"github.com/burger/goterm"
 )
@@ -25,6 +24,7 @@ var (
 		inputDir       string
 		outputDir      string
 		magickBins     string
+		recordPrefix   string
 		filesPerRecord int
 
 		// Private stuff
@@ -110,22 +110,17 @@ func main() {
 		log.Fatalf("No command specified! Valid commands include: [h2j, j2tf]\n")
 	}
 
-	var wg sync.WaitGroup
-	{
-		var err error
-		cmd, args := os.Args[1], os.Args[2:]
-		switch strings.ToLower(cmd) {
-		case "h2j":
-			err = RunHdrToJpegJob(CLI.numWorkers, args, updates, &wg)
-		case "j2tf":
-			err = RunJpegToTFRecordJob(CLI.numWorkers, args, updates, &wg)
-		default:
-			err = fmt.Errorf("unknown command %s", cmd)
-		}
-		fatalOnErr(err)
+	var err error
+	cmd, args := os.Args[1], os.Args[2:]
+	switch strings.ToLower(cmd) {
+	case "h2j":
+		err = RunHdrToJpegJob(CLI.numWorkers, args, updates)
+	case "j2tf":
+		err = RunJpegToTFRecordJob(CLI.numWorkers, args, updates)
+	default:
+		err = fmt.Errorf("unknown command %s", cmd)
 	}
-
-	wg.Wait()
+	fatalOnErr(err)
 
 	setStatus(updates, "Done!")
 	close(updates)

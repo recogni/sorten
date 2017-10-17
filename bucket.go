@@ -73,7 +73,7 @@ func newBucketManager(bucketName string) (*bucketManager, error) {
 	}, nil
 }
 
-func (bm *bucketManager) bucketUpload(dst *bucketPath, src string) error {
+func (bm *bucketManager) bucketUploadFile(dst *bucketPath, src string) error {
 	f, err := os.Open(src)
 	if err != nil {
 		return err
@@ -88,7 +88,20 @@ func (bm *bucketManager) bucketUpload(dst *bucketPath, src string) error {
 	return wc.Close()
 }
 
-func (bm *bucketManager) bucketDownload(dst string, src *bucketPath) error {
+func (bm *bucketManager) bucketDownload(src *bucketPath) ([]byte, error) {
+	rc, err := bm.client.Bucket(src.bucket).Object(src.subpath).NewReader(bm.ctxt)
+	if err != nil {
+		return nil, err
+	}
+
+	bs := make([]byte, 0, rc.Size())
+	if _, err := rc.Read(bs); err != nil {
+		return nil, err
+	}
+	return bs, nil
+}
+
+func (bm *bucketManager) bucketDownloadFile(dst string, src *bucketPath) error {
 	rc, err := bm.client.Bucket(src.bucket).Object(src.subpath).NewReader(bm.ctxt)
 	if err != nil {
 		return err

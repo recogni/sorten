@@ -40,7 +40,7 @@ func hdrToJpegWorker(workerId int, jobs <-chan *hdrToJpegJob, updates chan<- *wo
 			bm := getBucketManager(bp.bucket)
 
 			setUpdate(updates, workerId, "attempting to download %s -> %s", job.source, source)
-			if err := bm.bucketDownload(source, bp); err != nil {
+			if err := bm.bucketDownloadFile(source, bp); err != nil {
 				setUpdate(updates, workerId, "Warning: unable to download %s from bucket, error: %s", job.source, err.Error())
 			} else {
 				setUpdate(updates, workerId, "download successful!")
@@ -67,7 +67,7 @@ func hdrToJpegWorker(workerId int, jobs <-chan *hdrToJpegJob, updates chan<- *wo
 			bp, _ := newBucketPath(job.destination)
 			bm := getBucketManager(bp.bucket)
 
-			if err := bm.bucketUpload(bp, destination); err != nil {
+			if err := bm.bucketUploadFile(bp, destination); err != nil {
 				setUpdate(updates, workerId, "Error: %s\n", err.Error())
 			}
 		}
@@ -104,7 +104,9 @@ func queuqHdrToJpegJobFiltered(fp string, jobs chan *hdrToJpegJob, wg *sync.Wait
 
 ////////////////////////////////////////////////////////////////////////////////
 
-func RunHdrToJpegJob(nworkers int, args []string, updates chan<- *workerUpdate, wg *sync.WaitGroup) error {
+func RunHdrToJpegJob(nworkers int, args []string, updates chan<- *workerUpdate) error {
+	var wg sync.WaitGroup
+
 	// Parse arguments for this sub-command.
 	fs := flag.NewFlagSet("HdrToJpeg", flag.ExitOnError)
 	fs.StringVar(&CLI.inputDir, "input", "", "input directory to read images from")
@@ -133,7 +135,7 @@ func RunHdrToJpegJob(nworkers int, args []string, updates chan<- *workerUpdate, 
 
 	// Create the workers based on how many CPU cores the system has.
 	for wId := 0; wId < CLI.numWorkers; wId++ {
-		go hdrToJpegWorker(wId, jobs, updates, wg)
+		go hdrToJpegWorker(wId, jobs, updates, &wg)
 	}
 
 	if isBucketPath(CLI.inputDir) {
@@ -156,7 +158,7 @@ func RunHdrToJpegJob(nworkers int, args []string, updates chan<- *workerUpdate, 
 			}
 
 			fp := "gs://" + strings.Join([]string{bp.bucket, attrs.Name}, string(filepath.Separator))
-			queuqHdrToJpegJobFiltered(fp, jobs, wg)
+			queuqHdrToJpegJobFiltered(fp, jobs, &wg)
 
 			c += 1
 			setStatus(updates, "found %d files so far ...", c)
@@ -168,7 +170,7 @@ func RunHdrToJpegJob(nworkers int, args []string, updates chan<- *workerUpdate, 
 			if err != nil {
 				setStatus(updates, "Warning found error walking dir. Error: %s", err.Error())
 			} else {
-				queuqHdrToJpegJobFiltered(fp, jobs, wg)
+				queuqHdrToJpegJobFiltered(fp, jobs, &wg)
 			}
 			return nil
 		}))
@@ -177,6 +179,12 @@ func RunHdrToJpegJob(nworkers int, args []string, updates chan<- *workerUpdate, 
 	// We are done feeding work to the workers, close the jobs channel so that
 	// they can end their routines.
 	close(jobs)
+
+	// Wait for all the wait groups to finish their work.
+	wg.Wait()
+
+	fmt.Printf("jobs closed")
+
 	return nil
 }
 
