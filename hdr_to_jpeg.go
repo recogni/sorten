@@ -78,9 +78,9 @@ func hdrToJpegWorker(workerId int, jobs <-chan *hdrToJpegJob, updates chan<- *wo
 	}
 }
 
-// queueJobFiltered checks the given file for the appropriate extension, and if
+// queuqHdrToJpegJobFiltered checks the given file for the appropriate extension, and if
 // it matches queues the current file as work for the next available worker queue.
-func queuqJobFiltered(fp string, jobs chan *hdrToJpegJob, wg *sync.WaitGroup) {
+func queuqHdrToJpegJobFiltered(fp string, jobs chan *hdrToJpegJob, wg *sync.WaitGroup) {
 	if strings.ToLower(path.Ext(fp)) == ".hdr" {
 		d, fn := filepath.Dir(fp), filepath.Base(fp)
 		rd, err := filepath.Rel(CLI.inputDir, d)
@@ -103,16 +103,6 @@ func queuqJobFiltered(fp string, jobs chan *hdrToJpegJob, wg *sync.WaitGroup) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
-var (
-	CLI = struct {
-		inputDir       string
-		outputDir      string
-		magickBins     string
-		useImageMagick bool
-		numWorkers     int
-	}{}
-)
 
 func RunHdrToJpegJob(nworkers int, args []string, updates chan<- *workerUpdate, wg *sync.WaitGroup) error {
 	// Parse arguments for this sub-command.
@@ -166,7 +156,7 @@ func RunHdrToJpegJob(nworkers int, args []string, updates chan<- *workerUpdate, 
 			}
 
 			fp := "gs://" + strings.Join([]string{bp.bucket, attrs.Name}, string(filepath.Separator))
-			queuqJobFiltered(fp, jobs, wg)
+			queuqHdrToJpegJobFiltered(fp, jobs, wg)
 
 			c += 1
 			setStatus(updates, "found %d files so far ...", c)
@@ -178,7 +168,7 @@ func RunHdrToJpegJob(nworkers int, args []string, updates chan<- *workerUpdate, 
 			if err != nil {
 				setStatus(updates, "Warning found error walking dir. Error: %s", err.Error())
 			} else {
-				queuqJobFiltered(fp, jobs, wg)
+				queuqHdrToJpegJobFiltered(fp, jobs, wg)
 			}
 			return nil
 		}))

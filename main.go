@@ -20,7 +20,17 @@ import (
 ////////////////////////////////////////////////////////////////////////////////
 
 var (
-	numWorkers = 1
+	CLI = struct {
+		// Command line args
+		inputDir       string
+		outputDir      string
+		magickBins     string
+		filesPerRecord int
+
+		// Private stuff
+		useImageMagick bool
+		numWorkers     int
+	}{}
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -75,7 +85,7 @@ func setUpdate(updates chan<- *workerUpdate, index int, format string, a ...inte
 }
 
 func setStatus(updates chan<- *workerUpdate, format string, a ...interface{}) {
-	setUpdate(updates, numWorkers, format, a...)
+	setUpdate(updates, CLI.numWorkers, format, a...)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -93,8 +103,8 @@ func main() {
 	// Make a channel to get updates from the workers so we can aggregate
 	// messages nicelyer.
 	updates := make(chan *workerUpdate)
-	go repaintUpdates(numWorkers, updates)
-	setStatus(updates, "Using %d CPU cores ...", numWorkers)
+	go repaintUpdates(CLI.numWorkers, updates)
+	setStatus(updates, "Using %d CPU cores ...", CLI.numWorkers)
 
 	if len(os.Args) < 2 {
 		log.Fatalf("No command specified! Valid commands include: [h2j, j2tf]\n")
@@ -106,7 +116,9 @@ func main() {
 		cmd, args := os.Args[1], os.Args[2:]
 		switch strings.ToLower(cmd) {
 		case "h2j":
-			err = RunHdrToJpegJob(numWorkers, args, updates, &wg)
+			err = RunHdrToJpegJob(CLI.numWorkers, args, updates, &wg)
+		case "j2tf":
+			err = RunJpegToTFRecordJob(CLI.numWorkers, args, updates, &wg)
 		default:
 			err = fmt.Errorf("unknown command %s", cmd)
 		}
@@ -126,8 +138,7 @@ func init() {
 	log.SetFlags(0)
 	log.SetOutput(os.Stdout)
 
-	// TODO: Override from env / command line flag.
-	numWorkers = runtime.NumCPU()
+	CLI.numWorkers = runtime.NumCPU()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
