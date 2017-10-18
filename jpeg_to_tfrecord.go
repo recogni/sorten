@@ -15,8 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
+	"github.com/recogni/sorten/gcloud"
 	"github.com/recogni/sorten/logger"
 
 	"github.com/recogni/tfutils"
@@ -61,7 +61,7 @@ type jpegToTfRecordStatus struct {
 
 func newJpegToTfRecordStatus(wId int, dst string) *jpegToTfRecordStatus {
 	writerOutFile := dst
-	if isBucketPath(dst) {
+	if gcloud.IsBucketPath(dst) {
 		// Create a temporary file name for this worker to write to - if it already
 		// exists, nuke the file so the writer starts again.
 		writerOutFile = path.Join(os.TempDir(), fmt.Sprintf("worker_%d.tfrecord", wId))
@@ -97,11 +97,15 @@ File List:
 
 func (js *jpegToTfRecordStatus) AddFile(file string, commonFeatures map[string]interface{}) error {
 	sourceFile := file
-	if isBucketPath(file) {
+	if gcloud.IsBucketPath(file) {
 		sourceFile = path.Join(os.TempDir(), fmt.Sprintf("worker_%d.jpeg", js.workerId))
-		bp, _ := newBucketPath(file)
-		bm := getBucketManager(bp.bucket)
-		if err := bm.bucketDownloadFile(sourceFile, bp); err != nil {
+		bp, err := gcloud.NewBucketPath(file)
+		if err != nil {
+			return err
+		}
+
+		bm, err := gcloud.GetBucketManager(bp.Bucket)
+		if err := bm.BucketDownloadFile(sourceFile, bp); err != nil {
 			return err
 		}
 	}
@@ -162,17 +166,29 @@ func (js *jpegToTfRecordStatus) Flush() error {
 	// If the destination file is a bucket path, we upload the intermediate
 	// file to the expected destination.
 	ext := path.Ext(js.tfdst)
-	if isBucketPath(js.tfdst) {
-		bp, _ := newBucketPath(js.tfdst)
-		bm := getBucketManager(bp.bucket)
-		err := bm.bucketUploadFile(bp, js.writerFile)
+	if gcloud.IsBucketPath(js.tfdst) {
+		bp, err := gcloud.NewBucketPath(js.tfdst)
+		if err != nil {
+			return err
+		}
+
+		bm, err := gcloud.GetBucketManager(bp.Bucket)
+		if err != nil {
+			return err
+		}
+
+		err = bm.BucketUploadFile(bp, js.writerFile)
 		if err != nil {
 			fmt.Printf("Warning, unable to upload file %s\n", js.tfdst)
+			return err
 		}
 
 		metaFile := strings.Replace(js.tfdst, ext, ".metadata", -1)
-		bp, _ = newBucketPath(metaFile)
-		bm.bucketUpload(bp, js.Marshal())
+		bp, err = gcloud.NewBucketPath(metaFile)
+		if err != nil {
+			return err
+		}
+		return bm.BucketUpload(bp, js.Marshal())
 	} else {
 		metaFile := strings.Replace(js.tfdst, ext, ".metadata", -1)
 		ioutil.WriteFile(metaFile, js.Marshal(), 0600)
@@ -186,7 +202,6 @@ func (js *jpegToTfRecordStatus) Flush() error {
 // jpegToTfRecordWorker is ...
 func jpegToTfRecordWorker(workerId int, fileq <-chan string, wg *sync.WaitGroup, wl *logger.WorkerLogger) {
 	wl.Log(workerId, "is ready for work (records per tf=%d)", CLI.filesPerRecord)
-	time.Sleep(1 * time.Second)
 
 	var status *jpegToTfRecordStatus
 	for file := range fileq {
@@ -261,7 +276,7 @@ func RunJpegToTFRecordJob(nworkers int, args []string, wl *logger.WorkerLogger) 
 	if len(CLI.outputDir) == 0 {
 		return errors.New("specify output directory with --output")
 	}
-	if !isBucketPath(CLI.outputDir) {
+	if !gcloud.IsBucketPath(CLI.outputDir) {
 		if _, err := os.Stat(CLI.outputDir); os.IsNotExist(err) {
 			return fmt.Errorf("output directory (%s) does not exist!", CLI.outputDir)
 		}
@@ -283,15 +298,22 @@ func RunJpegToTFRecordJob(nworkers int, args []string, wl *logger.WorkerLogger) 
 		go jpegToTfRecordWorker(wId, fileq, &wg, wl)
 	}
 
-	if isBucketPath(CLI.inputDir) {
-		bp, err := newBucketPath(CLI.inputDir)
-		fatalOnErr(err)
+	if gcloud.IsBucketPath(CLI.inputDir) {
+		bp, err := gcloud.NewBucketPath(CLI.inputDir)
+		if err != nil {
+			return err
+		}
 
-		wl.Status("Using google cloud APIs to access bucket: %s", bp.bucket)
-		bm := getBucketManager(bp.bucket)
+		wl.Status("Using google cloud APIs to access bucket: %s", bp.Bucket)
+		bm, err := gcloud.GetBucketManager(bp.Bucket)
+		if err != nil {
+			return err
+		}
 
-		it, err := bm.getBucketIterator(bp.subpath)
-		fatalOnErr(err)
+		it, err := bm.GetBucketIterator(bp.Subpath)
+		if err != nil {
+			return err
+		}
 
 		c := 0
 		for {
@@ -299,10 +321,12 @@ func RunJpegToTFRecordJob(nworkers int, args []string, wl *logger.WorkerLogger) 
 			if err == iterator.Done {
 				break
 			} else {
-				fatalOnErr(err)
+				if err != nil {
+					return err
+				}
 			}
 
-			fp := "gs://" + strings.Join([]string{bp.bucket, attrs.Name}, string(filepath.Separator))
+			fp := "gs://" + strings.Join([]string{bp.Bucket, attrs.Name}, string(filepath.Separator))
 			queueFileForJpegToTfRecordJob(fileq, fp)
 
 			c += 1
@@ -311,14 +335,17 @@ func RunJpegToTFRecordJob(nworkers int, args []string, wl *logger.WorkerLogger) 
 
 	} else {
 		wl.Status("Building file list ... (this can take a while on large mounted dirs) ...")
-		fatalOnErr(filepath.Walk(CLI.inputDir, func(fp string, fi os.FileInfo, err error) error {
+		err := filepath.Walk(CLI.inputDir, func(fp string, fi os.FileInfo, err error) error {
 			if err != nil {
 				wl.Status("Warning found error walking dir. Error: %s", err.Error())
 			} else {
 				queueFileForJpegToTfRecordJob(fileq, fp)
 			}
 			return nil
-		}))
+		})
+		if err != nil {
+			return err
+		}
 	}
 
 	// We are done feeding work to the workers, close the fileq channel so that

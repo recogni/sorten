@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/recogni/sorten/gcloud"
 	"github.com/recogni/sorten/logger"
 
 	"google.golang.org/api/iterator"
@@ -36,13 +37,13 @@ func hdrToJpegWorker(workerId int, jobs <-chan *hdrToJpegJob, wg *sync.WaitGroup
 	wl.Log(workerId, "is ready for work")
 	for job := range jobs {
 		source := job.source
-		if isBucketPath(job.source) {
+		if gcloud.IsBucketPath(job.source) {
 			source = path.Join(os.TempDir(), fmt.Sprintf("worker_%d_input.hdr", workerId))
-			bp, _ := newBucketPath(job.source)
-			bm := getBucketManager(bp.bucket)
+			bp, _ := gcloud.NewBucketPath(job.source)
+			bm, _ := gcloud.GetBucketManager(bp.Bucket)
 
 			wl.Log(workerId, "attempting to download %s -> %s", job.source, source)
-			if err := bm.bucketDownloadFile(source, bp); err != nil {
+			if err := bm.BucketDownloadFile(source, bp); err != nil {
 				wl.Log(workerId, "Warning: unable to download %s from bucket, error: %s", job.source, err.Error())
 			} else {
 				wl.Log(workerId, "download successful!")
@@ -51,7 +52,7 @@ func hdrToJpegWorker(workerId int, jobs <-chan *hdrToJpegJob, wg *sync.WaitGroup
 
 		isBucketDst := false
 		destination := job.destination
-		if isBucketPath(job.destination) {
+		if gcloud.IsBucketPath(job.destination) {
 			isBucketDst = true
 			destination = path.Join(os.TempDir(), fmt.Sprintf("worker_%d_output.jpeg", workerId))
 		}
@@ -66,10 +67,10 @@ func hdrToJpegWorker(workerId int, jobs <-chan *hdrToJpegJob, wg *sync.WaitGroup
 
 		if isBucketDst {
 			wl.Log(workerId, "uploading %s to google bucket %s", destination, job.destination)
-			bp, _ := newBucketPath(job.destination)
-			bm := getBucketManager(bp.bucket)
+			bp, _ := gcloud.NewBucketPath(job.destination)
+			bm, _ := gcloud.GetBucketManager(bp.Bucket)
 
-			if err := bm.bucketUploadFile(bp, destination); err != nil {
+			if err := bm.BucketUploadFile(bp, destination); err != nil {
 				wl.Log(workerId, "Error: %s\n", err.Error())
 			}
 		}
@@ -122,7 +123,7 @@ func RunHdrToJpegJob(nworkers int, args []string, wl *logger.WorkerLogger) error
 	if len(CLI.outputDir) == 0 {
 		errors.New("specify output directory with --output")
 	}
-	if !isBucketPath(CLI.outputDir) {
+	if !gcloud.IsBucketPath(CLI.outputDir) {
 		if _, err := os.Stat(CLI.outputDir); os.IsNotExist(err) {
 			fmt.Errorf("output directory (%s) does not exist!", CLI.outputDir)
 		}
@@ -140,14 +141,14 @@ func RunHdrToJpegJob(nworkers int, args []string, wl *logger.WorkerLogger) error
 		go hdrToJpegWorker(wId, jobs, &wg, wl)
 	}
 
-	if isBucketPath(CLI.inputDir) {
-		bp, err := newBucketPath(CLI.inputDir)
+	if gcloud.IsBucketPath(CLI.inputDir) {
+		bp, err := gcloud.NewBucketPath(CLI.inputDir)
 		fatalOnErr(err)
 
-		wl.Status("Using google cloud APIs to access bucket: %s", bp.bucket)
-		bm := getBucketManager(bp.bucket)
+		wl.Status("Using google cloud APIs to access bucket: %s", bp.Bucket)
+		bm, err := gcloud.GetBucketManager(bp.Bucket)
 
-		it, err := bm.getBucketIterator(bp.subpath)
+		it, err := bm.GetBucketIterator(bp.Subpath)
 		fatalOnErr(err)
 
 		c := 0
@@ -159,7 +160,7 @@ func RunHdrToJpegJob(nworkers int, args []string, wl *logger.WorkerLogger) error
 				fatalOnErr(err)
 			}
 
-			fp := "gs://" + strings.Join([]string{bp.bucket, attrs.Name}, string(filepath.Separator))
+			fp := "gs://" + strings.Join([]string{bp.Bucket, attrs.Name}, string(filepath.Separator))
 			queuqHdrToJpegJobFiltered(fp, jobs, &wg)
 
 			c += 1

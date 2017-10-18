@@ -1,4 +1,6 @@
-package main
+////////////////////////////////////////////////////////////////////////////////
+
+package gcloud
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -16,20 +18,21 @@ import (
 
 ////////////////////////////////////////////////////////////////////////////////
 
-func isBucketPath(s string) bool {
+func IsBucketPath(s string) bool {
 	return strings.HasPrefix(strings.ToLower(s), "gs://")
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type bucketPath struct {
-	bp      string
-	bucket  string
-	subpath string
+type BucketPath struct {
+	bp string
+
+	Bucket  string
+	Subpath string
 }
 
-func newBucketPath(s string) (*bucketPath, error) {
-	if !isBucketPath(s) {
+func NewBucketPath(s string) (*BucketPath, error) {
+	if !IsBucketPath(s) {
 		return nil, errors.New("bucket paths should begin with gs://")
 	}
 
@@ -44,59 +47,61 @@ func newBucketPath(s string) (*bucketPath, error) {
 		return nil, errors.New("bucket name not specified")
 	}
 
-	return &bucketPath{
-		bp:      s,
-		bucket:  items[0],
-		subpath: strings.Join(items[1:], string(filepath.Separator)),
+	return &BucketPath{
+		bp: s,
+
+		Bucket:  items[0],
+		Subpath: strings.Join(items[1:], string(filepath.Separator)),
 	}, nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type bucketManager struct {
-	bucket string
+type BucketManager struct {
+	Bucket string
 	ctxt   context.Context
 	client *storage.Client
 }
 
-func newBucketManager(bucketName string) (*bucketManager, error) {
+func newBucketManager(bucketName string) (*BucketManager, error) {
 	ctxt := context.Background()
 	client, err := storage.NewClient(ctxt)
 	if err != nil {
 		return nil, err
 	}
 
-	return &bucketManager{
-		bucket: bucketName,
+	return &BucketManager{
 		ctxt:   ctxt,
 		client: client,
+
+		Bucket: bucketName,
 	}, nil
 }
 
-func (bm *bucketManager) bucketUpload(dst *bucketPath, data []byte) error {
-	wc := bm.client.Bucket(dst.bucket).Object(dst.subpath).NewWriter(bm.ctxt)
+func (bm *BucketManager) BucketUpload(dst *BucketPath, data []byte) error {
+	wc := bm.client.Bucket(dst.Bucket).Object(dst.Subpath).NewWriter(bm.ctxt)
 	defer wc.Close()
 
 	_, err := wc.Write(data)
 	return err
 }
 
-func (bm *bucketManager) bucketUploadFile(dst *bucketPath, src string) error {
+func (bm *BucketManager) BucketUploadFile(dst *BucketPath, src string) error {
 	f, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 
-	wc := bm.client.Bucket(dst.bucket).Object(dst.subpath).NewWriter(bm.ctxt)
+	wc := bm.client.Bucket(dst.Bucket).Object(dst.Subpath).NewWriter(bm.ctxt)
 	if _, err := io.Copy(wc, f); err != nil {
 		return err
 	}
 	return wc.Close()
 }
 
-func (bm *bucketManager) bucketDownload(src *bucketPath) ([]byte, error) {
-	rc, err := bm.client.Bucket(src.bucket).Object(src.subpath).NewReader(bm.ctxt)
+func (bm *BucketManager) BucketDownload(src *BucketPath) ([]byte, error) {
+	rc, err := bm.client.Bucket(src.Bucket).Object(src.Subpath).NewReader(bm.ctxt)
 	if err != nil {
 		return nil, err
 	}
@@ -108,8 +113,8 @@ func (bm *bucketManager) bucketDownload(src *bucketPath) ([]byte, error) {
 	return bs, nil
 }
 
-func (bm *bucketManager) bucketDownloadFile(dst string, src *bucketPath) error {
-	rc, err := bm.client.Bucket(src.bucket).Object(src.subpath).NewReader(bm.ctxt)
+func (bm *BucketManager) BucketDownloadFile(dst string, src *BucketPath) error {
+	rc, err := bm.client.Bucket(src.Bucket).Object(src.Subpath).NewReader(bm.ctxt)
 	if err != nil {
 		return err
 	}
@@ -126,28 +131,28 @@ func (bm *bucketManager) bucketDownloadFile(dst string, src *bucketPath) error {
 	return rc.Close()
 }
 
-func (bm *bucketManager) getBucketIterator(prefix string) (*storage.ObjectIterator, error) {
-	return bm.client.Bucket(bm.bucket).Objects(bm.ctxt, &storage.Query{Prefix: prefix}), nil
+func (bm *BucketManager) GetBucketIterator(prefix string) (*storage.ObjectIterator, error) {
+	return bm.client.Bucket(bm.Bucket).Objects(bm.ctxt, &storage.Query{Prefix: prefix}), nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-var managers = map[string]*bucketManager{}
+var managers = map[string]*BucketManager{}
 var managerMutex sync.RWMutex
 
-func getBucketManager(bn string) *bucketManager {
+func GetBucketManager(bn string) (*BucketManager, error) {
 	if bm, ok := managers[bn]; ok {
-		return bm
+		return bm, nil
 	}
 
 	managerMutex.Lock()
 	defer managerMutex.Unlock()
 
 	bm, err := newBucketManager(bn)
-	fatalOnErr(err)
-
-	managers[bn] = bm
-	return bm
+	if err == nil {
+		managers[bn] = bm
+	}
+	return bm, err
 }
 
 ////////////////////////////////////////////////////////////////////////////////

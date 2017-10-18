@@ -31,9 +31,10 @@ type WorkerLogger struct {
 
 func New(numWorkers int) (*WorkerLogger, error) {
 	return &WorkerLogger{
-		nw:    numWorkers,
-		msgCh: make(chan *workerMsg, numWorkers),
-		hdrCh: make(chan string),
+		nw:     numWorkers,
+		msgCh:  make(chan *workerMsg, numWorkers),
+		hdrCh:  make(chan string),
+		doneCh: make(chan struct{}),
 	}, nil
 }
 
