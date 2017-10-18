@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 
-package main
+package h2j
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -19,6 +19,21 @@ import (
 	"github.com/recogni/sorten/logger"
 
 	"google.golang.org/api/iterator"
+)
+
+////////////////////////////////////////////////////////////////////////////////
+
+var (
+	CLI = struct {
+		// Command line args common to all commands
+		inputDir   string
+		outputDir  string
+		magickBins string
+
+		// Private stuff
+		useImageMagick bool
+		numWorkers     int
+	}{}
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -84,6 +99,7 @@ func hdrToJpegWorker(workerId int, jobs <-chan *hdrToJpegJob, wg *sync.WaitGroup
 // queuqHdrToJpegJobFiltered checks the given file for the appropriate extension, and if
 // it matches queues the current file as work for the next available worker queue.
 func queuqHdrToJpegJobFiltered(fp string, jobs chan *hdrToJpegJob, wg *sync.WaitGroup) {
+	fmt.Printf("Found file: %s", fp)
 	if strings.ToLower(path.Ext(fp)) == ".hdr" {
 		d, fn := filepath.Dir(fp), filepath.Base(fp)
 		rd, err := filepath.Rel(CLI.inputDir, d)
@@ -107,7 +123,7 @@ func queuqHdrToJpegJobFiltered(fp string, jobs chan *hdrToJpegJob, wg *sync.Wait
 
 ////////////////////////////////////////////////////////////////////////////////
 
-func RunHdrToJpegJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
+func RunJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
 	var wg sync.WaitGroup
 
 	// Parse arguments for this sub-command.
@@ -143,21 +159,25 @@ func RunHdrToJpegJob(nworkers int, args []string, wl *logger.WorkerLogger) error
 
 	if gcloud.IsBucketPath(CLI.inputDir) {
 		bp, err := gcloud.NewBucketPath(CLI.inputDir)
-		fatalOnErr(err)
+		if err != nil {
+			return err
+		}
 
 		wl.Status("Using google cloud APIs to access bucket: %s", bp.Bucket)
 		bm, err := gcloud.GetBucketManager(bp.Bucket)
 
 		it, err := bm.GetBucketIterator(bp.Subpath)
-		fatalOnErr(err)
+		if err != nil {
+			return err
+		}
 
 		c := 0
 		for {
 			attrs, err := it.Next()
 			if err == iterator.Done {
 				break
-			} else {
-				fatalOnErr(err)
+			} else if err != nil {
+				wl.Status("Warning found error: %s", err.Error())
 			}
 
 			fp := "gs://" + strings.Join([]string{bp.Bucket, attrs.Name}, string(filepath.Separator))
@@ -169,7 +189,7 @@ func RunHdrToJpegJob(nworkers int, args []string, wl *logger.WorkerLogger) error
 
 	} else {
 		wl.Status("Building file list ... (this can take a while on large mounted dirs) ...")
-		fatalOnErr(filepath.Walk(CLI.inputDir, func(fp string, fi os.FileInfo, err error) error {
+		err := (filepath.Walk(CLI.inputDir, func(fp string, fi os.FileInfo, err error) error {
 			if err != nil {
 				wl.Status("Warning found error walking dir. Error: %s", err.Error())
 			} else {
@@ -177,6 +197,9 @@ func RunHdrToJpegJob(nworkers int, args []string, wl *logger.WorkerLogger) error
 			}
 			return nil
 		}))
+		if err != nil {
+			return err
+		}
 	}
 
 	// We are done feeding work to the workers, close the jobs channel so that
@@ -185,8 +208,6 @@ func RunHdrToJpegJob(nworkers int, args []string, wl *logger.WorkerLogger) error
 
 	// Wait for all the wait groups to finish their work.
 	wg.Wait()
-
-	fmt.Printf("jobs closed")
 
 	return nil
 }

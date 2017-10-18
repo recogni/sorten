@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 
-package main
+package j2tf
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -21,6 +21,22 @@ import (
 
 	"github.com/recogni/tfutils"
 	"google.golang.org/api/iterator"
+)
+
+////////////////////////////////////////////////////////////////////////////////
+
+var (
+	CLI = struct {
+		// Command line args common to all commands
+		inputDir       string
+		outputDir      string
+		recordPrefix   string
+		filesPerRecord int
+		imageClassId   int
+
+		// Private stuff
+		numWorkers int
+	}{}
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -257,7 +273,7 @@ func queueFileForJpegToTfRecordJob(fileq chan string, fp string) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-func RunJpegToTFRecordJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
+func RunJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
 	var wg sync.WaitGroup
 
 	// Parse arguments for this sub-command.

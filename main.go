@@ -13,25 +13,15 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/recogni/sorten/jobs/h2j"
+	"github.com/recogni/sorten/jobs/j2tf"
 	"github.com/recogni/sorten/logger"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
 
 var (
-	CLI = struct {
-		// Command line args common to all commands
-		inputDir       string
-		outputDir      string
-		magickBins     string
-		recordPrefix   string
-		filesPerRecord int
-		imageClassId   int
-
-		// Private stuff
-		useImageMagick bool
-		numWorkers     int
-	}{}
+	numWorkers = runtime.NumCPU()
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -50,7 +40,7 @@ func main() {
 	}
 
 	// Make a logger
-	wl, err := logger.New(CLI.numWorkers)
+	wl, err := logger.New(numWorkers)
 	fatalOnErr(err)
 	go wl.Start()
 	defer wl.Close()
@@ -58,9 +48,9 @@ func main() {
 	cmd, args := os.Args[1], os.Args[2:]
 	switch strings.ToLower(cmd) {
 	case "h2j":
-		err = RunHdrToJpegJob(CLI.numWorkers, args, wl)
+		err = h2j.RunJob(numWorkers, args, wl)
 	case "j2tf":
-		err = RunJpegToTFRecordJob(CLI.numWorkers, args, wl)
+		err = j2tf.RunJob(numWorkers, args, wl)
 	default:
 		err = fmt.Errorf("unknown command %s", cmd)
 	}
@@ -75,8 +65,6 @@ func init() {
 	log.SetPrefix("")
 	log.SetFlags(0)
 	log.SetOutput(os.Stdout)
-
-	CLI.numWorkers = runtime.NumCPU()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
