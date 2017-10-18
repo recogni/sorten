@@ -55,8 +55,8 @@
 			"revision": ""
 		},
 		{
-			"checksumSHA1": "OtXhNUqCzrnkQXAQxpLVHV8WZ6M=",
-			"path": "github.com/burger/goterm",
+			"checksumSHA1": "grvilwEz6bkGZQUsPE9eqXazN8g=",
+			"path": "github.com/buger/goterm",
 			"revision": "d443b9114f9c050367638a536310fbec36a0de11",
 			"revisionTime": "2017-09-18T17:19:49Z"
 		},
