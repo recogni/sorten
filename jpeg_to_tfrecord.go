@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"image/jpeg"
 	"io/ioutil"
 	"os"
 	"path"
@@ -17,7 +18,6 @@ import (
 	"time"
 
 	"github.com/recogni/tfutils"
-
 	"google.golang.org/api/iterator"
 )
 
@@ -60,6 +60,8 @@ type jpegToTfRecordStatus struct {
 func newJpegToTfRecordStatus(wId int, dst string) *jpegToTfRecordStatus {
 	writerOutFile := dst
 	if isBucketPath(dst) {
+		// Create a temporary file name for this worker to write to - if it already
+		// exists, nuke the file so the writer starts again.
 		writerOutFile = path.Join(os.TempDir(), fmt.Sprintf("worker_%d.tfrecord", wId))
 	}
 
@@ -91,12 +93,63 @@ File List:
 	return []byte(ret)
 }
 
-func (js *jpegToTfRecordStatus) AddFile(file string) {
-	// TODO: Download and write file here!
-	js.writer.WriteRecord([]byte("hello this is a test"))
+func (js *jpegToTfRecordStatus) AddFile(file string, commonFeatures map[string]interface{}) error {
+	sourceFile := file
+	if isBucketPath(file) {
+		sourceFile = path.Join(os.TempDir(), fmt.Sprintf("worker_%d.jpeg", js.workerId))
+		bp, _ := newBucketPath(file)
+		bm := getBucketManager(bp.bucket)
+		if err := bm.bucketDownloadFile(sourceFile, bp); err != nil {
+			return err
+		}
+	}
 
+	// Load the local jpeg image and examine its bounds.
+	r, err := os.Open(sourceFile)
+	if err != nil {
+		return err
+	}
+
+	cfg, err := jpeg.DecodeConfig(r)
+	if err != nil {
+		return err
+	}
+	r.Close()
+
+	bs, err := ioutil.ReadFile(sourceFile)
+	if err != nil {
+		return err
+	}
+
+	imageFeatures := map[string]interface{}{
+		"image/colorspace":  "RGB",
+		"image/width":       cfg.Width,
+		"image/height":      cfg.Height,
+		"image/channels":    3,
+		"image/format":      "JPEG",
+		"image/filename":    file,
+		"image/encoded":     bs,
+		"image/class/label": CLI.imageClassId,
+	}
+	for k, v := range commonFeatures {
+		imageFeatures[k] = v
+	}
+
+	fs, err := tfutils.GetFeaturesFromMap(imageFeatures)
+	if err != nil {
+		return err
+	}
+
+	bs, err = tfutils.GetTFRecordStringForFeatures(fs)
+	if err != nil {
+		return err
+	}
+
+	js.writer.WriteRecord(bs)
 	js.count += 1
 	js.files = append(js.files, file)
+
+	return nil
 }
 
 func (js *jpegToTfRecordStatus) Flush() error {
@@ -148,7 +201,8 @@ func jpegToTfRecordWorker(workerId int, fileq <-chan string, updates chan<- *wor
 		setUpdate(updates, workerId, "got file from queue: %s", file)
 
 		// Once we have added this file to the record, tag it in the status.
-		status.AddFile(file)
+		commonFeatureMap := map[string]interface{}{}
+		status.AddFile(file, commonFeatureMap)
 
 		// If the status count has matched the number of nodes per shard,
 		// we should finish up writing using the current writer and set
@@ -178,7 +232,10 @@ func jpegToTfRecordWorker(workerId int, fileq <-chan string, updates chan<- *wor
 // TFRecord.
 func queueFileForJpegToTfRecordJob(fileq chan string, fp string) {
 	if strings.ToLower(path.Ext(fp)) == ".jpeg" {
-		fileq <- fp
+		// HACK: Ignore files with _empty_ in them
+		if !strings.Contains(fp, "_empty_") {
+			fileq <- fp
+		}
 	}
 }
 
@@ -192,8 +249,8 @@ func RunJpegToTFRecordJob(nworkers int, args []string, updates chan<- *workerUpd
 	fs.StringVar(&CLI.inputDir, "input", "", "input directory to read images from")
 	fs.StringVar(&CLI.outputDir, "output", "", "output directory to read images from")
 	fs.StringVar(&CLI.recordPrefix, "prefix", "", "tf record name prefix")
+	fs.IntVar(&CLI.imageClassId, "image-class", 1002, "class to assign tf records to")
 	fs.IntVar(&CLI.filesPerRecord, "shard-size", 1, "number of records per shard")
-
 	fs.Parse(args)
 
 	if len(CLI.inputDir) == 0 {
@@ -216,7 +273,7 @@ func RunJpegToTFRecordJob(nworkers int, args []string, updates chan<- *workerUpd
 	// Once all files have been loaded, or when the job count is hit for a job
 	// worker, it is responsible for closing the record writer and asking for a
 	// new output file provided there is more work to do.
-	fileq := make(chan string, CLI.numWorkers*4)
+	fileq := make(chan string, CLI.numWorkers*1)
 
 	// Create the workers based on how many CPU cores the system has.
 	for wId := 0; wId < CLI.numWorkers; wId++ {

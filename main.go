@@ -26,6 +26,7 @@ var (
 		magickBins     string
 		recordPrefix   string
 		filesPerRecord int
+		imageClassId   int
 
 		// Private stuff
 		useImageMagick bool
