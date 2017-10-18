@@ -17,6 +17,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/recogni/sorten/logger"
+
 	"github.com/recogni/tfutils"
 	"google.golang.org/api/iterator"
 )
@@ -182,8 +184,8 @@ func (js *jpegToTfRecordStatus) Flush() error {
 ////////////////////////////////////////////////////////////////////////////////
 
 // jpegToTfRecordWorker is ...
-func jpegToTfRecordWorker(workerId int, fileq <-chan string, updates chan<- *workerUpdate, wg *sync.WaitGroup) {
-	setUpdate(updates, workerId, "is ready for work (records per tf=%d)", CLI.filesPerRecord)
+func jpegToTfRecordWorker(workerId int, fileq <-chan string, wg *sync.WaitGroup, wl *logger.WorkerLogger) {
+	wl.Log(workerId, "is ready for work (records per tf=%d)", CLI.filesPerRecord)
 	time.Sleep(1 * time.Second)
 
 	var status *jpegToTfRecordStatus
@@ -195,10 +197,10 @@ func jpegToTfRecordWorker(workerId int, fileq <-chan string, updates chan<- *wor
 			dstfp := strings.Join([]string{CLI.outputDir, fname}, string(filepath.Separator))
 			status = newJpegToTfRecordStatus(workerId, dstfp)
 
-			setUpdate(updates, workerId, "Got a new record (%s)", status.tfdst)
+			wl.Log(workerId, "Got a new record (%s)", status.tfdst)
 		}
 
-		setUpdate(updates, workerId, "got file from queue: %s", file)
+		wl.Log(workerId, "got file from queue: %s", file)
 
 		// Once we have added this file to the record, tag it in the status.
 		commonFeatureMap := map[string]interface{}{}
@@ -213,7 +215,7 @@ func jpegToTfRecordWorker(workerId int, fileq <-chan string, updates chan<- *wor
 		}
 
 		// Job done, tag the workgroup and check for more work.
-		setUpdate(updates, workerId, "is now idle")
+		wl.Log(workerId, "is now idle")
 	}
 
 	// If we are done with files to process, we need to close the writer
@@ -241,7 +243,7 @@ func queueFileForJpegToTfRecordJob(fileq chan string, fp string) {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-func RunJpegToTFRecordJob(nworkers int, args []string, updates chan<- *workerUpdate) error {
+func RunJpegToTFRecordJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
 	var wg sync.WaitGroup
 
 	// Parse arguments for this sub-command.
@@ -254,14 +256,14 @@ func RunJpegToTFRecordJob(nworkers int, args []string, updates chan<- *workerUpd
 	fs.Parse(args)
 
 	if len(CLI.inputDir) == 0 {
-		errors.New("specify input directory with --input")
+		return errors.New("specify input directory with --input")
 	}
 	if len(CLI.outputDir) == 0 {
-		errors.New("specify output directory with --output")
+		return errors.New("specify output directory with --output")
 	}
 	if !isBucketPath(CLI.outputDir) {
 		if _, err := os.Stat(CLI.outputDir); os.IsNotExist(err) {
-			fmt.Errorf("output directory (%s) does not exist!", CLI.outputDir)
+			return fmt.Errorf("output directory (%s) does not exist!", CLI.outputDir)
 		}
 	}
 	CLI.numWorkers = nworkers
@@ -278,14 +280,14 @@ func RunJpegToTFRecordJob(nworkers int, args []string, updates chan<- *workerUpd
 	// Create the workers based on how many CPU cores the system has.
 	for wId := 0; wId < CLI.numWorkers; wId++ {
 		wg.Add(1)
-		go jpegToTfRecordWorker(wId, fileq, updates, &wg)
+		go jpegToTfRecordWorker(wId, fileq, &wg, wl)
 	}
 
 	if isBucketPath(CLI.inputDir) {
 		bp, err := newBucketPath(CLI.inputDir)
 		fatalOnErr(err)
 
-		setStatus(updates, "Using google cloud APIs to access bucket: %s", bp.bucket)
+		wl.Status("Using google cloud APIs to access bucket: %s", bp.bucket)
 		bm := getBucketManager(bp.bucket)
 
 		it, err := bm.getBucketIterator(bp.subpath)
@@ -304,14 +306,14 @@ func RunJpegToTFRecordJob(nworkers int, args []string, updates chan<- *workerUpd
 			queueFileForJpegToTfRecordJob(fileq, fp)
 
 			c += 1
-			setStatus(updates, "found %d files so far ...", c)
+			wl.Status("found %d files so far ...", c)
 		}
 
 	} else {
-		setStatus(updates, "Building file list ... (this can take a while on large mounted dirs) ...")
+		wl.Status("Building file list ... (this can take a while on large mounted dirs) ...")
 		fatalOnErr(filepath.Walk(CLI.inputDir, func(fp string, fi os.FileInfo, err error) error {
 			if err != nil {
-				setStatus(updates, "Warning found error walking dir. Error: %s", err.Error())
+				wl.Status("Warning found error walking dir. Error: %s", err.Error())
 			} else {
 				queueFileForJpegToTfRecordJob(fileq, fp)
 			}

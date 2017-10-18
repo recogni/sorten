@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/recogni/sorten/logger"
+
 	"google.golang.org/api/iterator"
 )
 
@@ -30,8 +32,8 @@ type hdrToJpegJob struct {
 // hdrToJpegWorker is a specialized worker which will run imagemagick on one
 // goroutine to convert the source file into the appropriate destination
 // file / format (as specified by the destination file's extension).
-func hdrToJpegWorker(workerId int, jobs <-chan *hdrToJpegJob, updates chan<- *workerUpdate, wg *sync.WaitGroup) {
-	setUpdate(updates, workerId, "is ready for work")
+func hdrToJpegWorker(workerId int, jobs <-chan *hdrToJpegJob, wg *sync.WaitGroup, wl *logger.WorkerLogger) {
+	wl.Log(workerId, "is ready for work")
 	for job := range jobs {
 		source := job.source
 		if isBucketPath(job.source) {
@@ -39,11 +41,11 @@ func hdrToJpegWorker(workerId int, jobs <-chan *hdrToJpegJob, updates chan<- *wo
 			bp, _ := newBucketPath(job.source)
 			bm := getBucketManager(bp.bucket)
 
-			setUpdate(updates, workerId, "attempting to download %s -> %s", job.source, source)
+			wl.Log(workerId, "attempting to download %s -> %s", job.source, source)
 			if err := bm.bucketDownloadFile(source, bp); err != nil {
-				setUpdate(updates, workerId, "Warning: unable to download %s from bucket, error: %s", job.source, err.Error())
+				wl.Log(workerId, "Warning: unable to download %s from bucket, error: %s", job.source, err.Error())
 			} else {
-				setUpdate(updates, workerId, "download successful!")
+				wl.Log(workerId, "download successful!")
 			}
 		}
 
@@ -54,27 +56,27 @@ func hdrToJpegWorker(workerId int, jobs <-chan *hdrToJpegJob, updates chan<- *wo
 			destination = path.Join(os.TempDir(), fmt.Sprintf("worker_%d_output.jpeg", workerId))
 		}
 
-		setUpdate(updates, workerId, "converting %s -> %s", source, destination)
+		wl.Log(workerId, "converting %s -> %s", source, destination)
 		cmd := exec.Command(path.Join(CLI.magickBins, "convert"), source, destination)
 		if _, err := cmd.CombinedOutput(); err != nil {
-			setUpdate(updates, workerId, "Warning: `convert %s %s` had error: %s", source, destination, err.Error())
+			wl.Log(workerId, "Warning: `convert %s %s` had error: %s", source, destination, err.Error())
 		} else {
-			setUpdate(updates, workerId, "conversion successful!")
+			wl.Log(workerId, "conversion successful!")
 		}
 
 		if isBucketDst {
-			setUpdate(updates, workerId, "uploading %s to google bucket %s", destination, job.destination)
+			wl.Log(workerId, "uploading %s to google bucket %s", destination, job.destination)
 			bp, _ := newBucketPath(job.destination)
 			bm := getBucketManager(bp.bucket)
 
 			if err := bm.bucketUploadFile(bp, destination); err != nil {
-				setUpdate(updates, workerId, "Error: %s\n", err.Error())
+				wl.Log(workerId, "Error: %s\n", err.Error())
 			}
 		}
 
 		// Job done, tag the workgroup and check for more work.
 		wg.Done()
-		setUpdate(updates, workerId, "is now idle")
+		wl.Log(workerId, "is now idle")
 	}
 }
 
@@ -104,7 +106,7 @@ func queuqHdrToJpegJobFiltered(fp string, jobs chan *hdrToJpegJob, wg *sync.Wait
 
 ////////////////////////////////////////////////////////////////////////////////
 
-func RunHdrToJpegJob(nworkers int, args []string, updates chan<- *workerUpdate) error {
+func RunHdrToJpegJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
 	var wg sync.WaitGroup
 
 	// Parse arguments for this sub-command.
@@ -135,14 +137,14 @@ func RunHdrToJpegJob(nworkers int, args []string, updates chan<- *workerUpdate) 
 
 	// Create the workers based on how many CPU cores the system has.
 	for wId := 0; wId < CLI.numWorkers; wId++ {
-		go hdrToJpegWorker(wId, jobs, updates, &wg)
+		go hdrToJpegWorker(wId, jobs, &wg, wl)
 	}
 
 	if isBucketPath(CLI.inputDir) {
 		bp, err := newBucketPath(CLI.inputDir)
 		fatalOnErr(err)
 
-		setStatus(updates, "Using google cloud APIs to access bucket: %s", bp.bucket)
+		wl.Status("Using google cloud APIs to access bucket: %s", bp.bucket)
 		bm := getBucketManager(bp.bucket)
 
 		it, err := bm.getBucketIterator(bp.subpath)
@@ -161,14 +163,14 @@ func RunHdrToJpegJob(nworkers int, args []string, updates chan<- *workerUpdate) 
 			queuqHdrToJpegJobFiltered(fp, jobs, &wg)
 
 			c += 1
-			setStatus(updates, "found %d files so far ...", c)
+			wl.Status("found %d files so far ...", c)
 		}
 
 	} else {
-		setStatus(updates, "Building file list ... (this can take a while on large mounted dirs) ...")
+		wl.Status("Building file list ... (this can take a while on large mounted dirs) ...")
 		fatalOnErr(filepath.Walk(CLI.inputDir, func(fp string, fi os.FileInfo, err error) error {
 			if err != nil {
-				setStatus(updates, "Warning found error walking dir. Error: %s", err.Error())
+				wl.Status("Warning found error walking dir. Error: %s", err.Error())
 			} else {
 				queuqHdrToJpegJobFiltered(fp, jobs, &wg)
 			}

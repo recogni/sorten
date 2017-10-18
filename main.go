@@ -13,14 +13,14 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/burger/goterm"
+	"github.com/recogni/sorten/logger"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
 
 var (
 	CLI = struct {
-		// Command line args
+		// Command line args common to all commands
 		inputDir       string
 		outputDir      string
 		magickBins     string
@@ -36,61 +36,6 @@ var (
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// workerUpdate contains a worker index and a message being sent from the
-// worker to the main thread.
-type workerUpdate struct {
-	id  int
-	msg string
-}
-
-// repaintUpdates waits on all specified workers and repaints the progress
-// string per worker to stdout.
-func repaintUpdates(workerCount int, updates <-chan *workerUpdate) {
-	header := "Application starting up ..."
-	us := make([]string, workerCount)
-	for i := 0; i < workerCount; i++ {
-		us[i] = fmt.Sprintf("initializing ...")
-	}
-
-	repaintCounter := 0
-	repaint := func() {
-		goterm.Clear()
-		defer goterm.Flush()
-
-		goterm.MoveCursor(1, 1)
-		goterm.Printf("%s\n", header)
-		for i := 0; i < workerCount; i++ {
-			goterm.MoveCursor(1, i+2)
-			goterm.Printf("worker %02d :: %s\n", i, us[i])
-		}
-		repaintCounter += 1
-	}
-
-	repaint()
-	for update := range updates {
-		if update.id == workerCount {
-			header = update.msg
-		} else if update.id >= 0 && update.id < workerCount {
-			us[update.id] = update.msg
-		}
-		repaint()
-		// time.Sleep(32 * time.Millisecond)
-	}
-}
-
-func setUpdate(updates chan<- *workerUpdate, index int, format string, a ...interface{}) {
-	updates <- &workerUpdate{
-		id:  index,
-		msg: fmt.Sprintf(format, a...),
-	}
-}
-
-func setStatus(updates chan<- *workerUpdate, format string, a ...interface{}) {
-	setUpdate(updates, CLI.numWorkers, format, a...)
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
 // fatalOnErr will abort the app on any fatal errors.
 func fatalOnErr(err error) {
 	if err != nil {
@@ -100,31 +45,28 @@ func fatalOnErr(err error) {
 
 // main entry point.
 func main() {
-
-	// Make a channel to get updates from the workers so we can aggregate
-	// messages nicelyer.
-	updates := make(chan *workerUpdate)
-	go repaintUpdates(CLI.numWorkers, updates)
-	setStatus(updates, "Using %d CPU cores ...", CLI.numWorkers)
-
 	if len(os.Args) < 2 {
 		log.Fatalf("No command specified! Valid commands include: [h2j, j2tf]\n")
 	}
 
-	var err error
+	// Make a logger
+	wl, err := logger.New(CLI.numWorkers)
+	fatalOnErr(err)
+	go wl.Start()
+	defer wl.Close()
+
 	cmd, args := os.Args[1], os.Args[2:]
 	switch strings.ToLower(cmd) {
 	case "h2j":
-		err = RunHdrToJpegJob(CLI.numWorkers, args, updates)
+		err = RunHdrToJpegJob(CLI.numWorkers, args, wl)
 	case "j2tf":
-		err = RunJpegToTFRecordJob(CLI.numWorkers, args, updates)
+		err = RunJpegToTFRecordJob(CLI.numWorkers, args, wl)
 	default:
 		err = fmt.Errorf("unknown command %s", cmd)
 	}
 	fatalOnErr(err)
 
-	setStatus(updates, "Done!")
-	close(updates)
+	wl.Status("Done!")
 }
 
 ////////////////////////////////////////////////////////////////////////////////
