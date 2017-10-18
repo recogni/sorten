@@ -302,7 +302,9 @@ func RunJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
 	}
 	if !gcloud.IsBucketPath(CLI.outputDir) {
 		if _, err := os.Stat(CLI.outputDir); os.IsNotExist(err) {
-			return fmt.Errorf("output directory (%s) does not exist!", CLI.outputDir)
+			if err := os.MkdirAll(CLI.outputDir, 600); err != nil {
+				return err
+			}
 		}
 	}
 	CLI.numWorkers = nworkers
