@@ -200,7 +200,7 @@ func (js *jpegToTfRecordStatus) Flush() error {
 ////////////////////////////////////////////////////////////////////////////////
 
 // jpegToTfRecordWorker is ...
-func jpegToTfRecordWorker(workerId int, fileq <-chan string, wg *sync.WaitGroup, wl *logger.WorkerLogger) {
+func jpegToTfRecordWorker(workerId int, commonMap map[string]interface{}, fileq <-chan string, wg *sync.WaitGroup, wl *logger.WorkerLogger) {
 	wl.Log(workerId, "is ready for work (records per tf=%d)", CLI.filesPerRecord)
 
 	var status *jpegToTfRecordStatus
@@ -218,8 +218,7 @@ func jpegToTfRecordWorker(workerId int, fileq <-chan string, wg *sync.WaitGroup,
 		wl.Log(workerId, "got file from queue: %s", file)
 
 		// Once we have added this file to the record, tag it in the status.
-		commonFeatureMap := map[string]interface{}{}
-		status.AddFile(file, commonFeatureMap)
+		status.AddFile(file, commonMap)
 
 		// If the status count has matched the number of nodes per shard,
 		// we should finish up writing using the current writer and set
@@ -270,6 +269,15 @@ func RunJpegToTFRecordJob(nworkers int, args []string, wl *logger.WorkerLogger) 
 	fs.IntVar(&CLI.filesPerRecord, "shard-size", 1, "number of records per shard")
 	fs.Parse(args)
 
+	// Extract common args to set in the map based on any key-value params.
+	commonMap := map[string]interface{}{}
+	for _, keqv := range fs.Args() {
+		items := strings.SplitN(keqv, "=", 2)
+		if len(items) == 2 {
+			commonMap[items[0]] = items[1]
+		}
+	}
+
 	if len(CLI.inputDir) == 0 {
 		return errors.New("specify input directory with --input")
 	}
@@ -295,7 +303,7 @@ func RunJpegToTFRecordJob(nworkers int, args []string, wl *logger.WorkerLogger) 
 	// Create the workers based on how many CPU cores the system has.
 	for wId := 0; wId < CLI.numWorkers; wId++ {
 		wg.Add(1)
-		go jpegToTfRecordWorker(wId, fileq, &wg, wl)
+		go jpegToTfRecordWorker(wId, commonMap, fileq, &wg, wl)
 	}
 
 	if gcloud.IsBucketPath(CLI.inputDir) {
