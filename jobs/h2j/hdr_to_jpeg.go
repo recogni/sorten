@@ -70,6 +70,16 @@ func hdrToJpegWorker(workerId int, jobs <-chan *hdrToJpegJob, wg *sync.WaitGroup
 		if gcloud.IsBucketPath(job.destination) {
 			isBucketDst = true
 			destination = path.Join(os.TempDir(), fmt.Sprintf("worker_%d_output.jpeg", workerId))
+		} else {
+			// Local file - verify that its parent directory exists
+			dir := path.Dir(destination)
+			if _, err := os.Stat(dir); os.IsNotExist(err) {
+				if err := os.MkdirAll(dir, 0755); err != nil {
+					// TODO: This should be done from a mutex :)
+					// TODO: Ignore this error for now
+					// return err
+				}
+			}
 		}
 
 		wl.Log(workerId, "converting %s -> %s", source, destination)

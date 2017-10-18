@@ -54,6 +54,9 @@ func main() {
 	default:
 		err = fmt.Errorf("unknown command %s", cmd)
 	}
+	if err != nil {
+		wl.Error(err)
+	}
 	fatalOnErr(err)
 
 	// wl.Status("Done!")

@@ -81,6 +81,16 @@ func newJpegToTfRecordStatus(wId int, dst string) *jpegToTfRecordStatus {
 		// Create a temporary file name for this worker to write to - if it already
 		// exists, nuke the file so the writer starts again.
 		writerOutFile = path.Join(os.TempDir(), fmt.Sprintf("worker_%d.tfrecord", wId))
+	} else {
+		// Local file - verify that its parent directory exists
+		dir := path.Dir(writerOutFile)
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				// TODO: This should be done from a mutex :)
+				// TODO: Ignore this error for now
+				// return err
+			}
+		}
 	}
 
 	w, err := tfutils.NewWriter(writerOutFile, nil)

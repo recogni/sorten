@@ -26,6 +26,7 @@ type WorkerLogger struct {
 	nw     int // number of workers
 	msgCh  chan *workerMsg
 	hdrCh  chan string
+	errCh  chan error
 	doneCh chan struct{}
 }
 
@@ -34,6 +35,7 @@ func New(numWorkers int) (*WorkerLogger, error) {
 		nw:     numWorkers,
 		msgCh:  make(chan *workerMsg, numWorkers),
 		hdrCh:  make(chan string),
+		errCh:  make(chan error),
 		doneCh: make(chan struct{}),
 	}, nil
 }
@@ -48,6 +50,10 @@ func (wl *WorkerLogger) Log(i int, format string, a ...interface{}) {
 
 func (wl *WorkerLogger) Status(format string, a ...interface{}) {
 	wl.hdrCh <- fmt.Sprintf(format, a...)
+}
+
+func (wl *WorkerLogger) Error(err error) {
+	wl.errCh <- err
 }
 
 func (wl *WorkerLogger) Close() {
@@ -78,6 +84,8 @@ func (wl *WorkerLogger) Start() {
 			wms[wMsg.index] = wMsg.msg
 		case <-wl.doneCh:
 			return
+		case err := <-wl.errCh:
+			hdr = fmt.Sprintf("Error: %s", err.Error())
 		}
 		repaint()
 	}
