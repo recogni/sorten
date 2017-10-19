@@ -51,10 +51,6 @@
 			"revisionTime": "2017-10-12T04:36:20Z"
 		},
 		{
-			"path": "code.google.com/p/goprotobuf/proto",
-			"revision": ""
-		},
-		{
 			"checksumSHA1": "grvilwEz6bkGZQUsPE9eqXazN8g=",
 			"path": "github.com/buger/goterm",
 			"revision": "d443b9114f9c050367638a536310fbec36a0de11",
@@ -101,6 +97,12 @@
 			"path": "github.com/googleapis/gax-go",
 			"revision": "317e0006254c44a0ac427cc52a0e083ff0b9622f",
 			"revisionTime": "2017-09-15T02:47:31Z"
+		},
+		{
+			"checksumSHA1": "ovWbL90g9tzsAFZEG8aklMQtl98=",
+			"path": "github.com/recogni/tfutils",
+			"revision": "77b474db5a8078ed0d3d634935fc315e20bd61ba",
+			"revisionTime": "2017-10-19T19:28:20Z"
 		},
 		{
 			"checksumSHA1": "dr5+PfIRzXeN+l1VG+s0lea9qz8=",
@@ -437,6 +439,10 @@
 			"path": "google.golang.org/grpc/transport",
 			"revision": "c209cdff16049a924bef4aa5c6f7588f0b42b2fa",
 			"revisionTime": "2017-10-12T22:51:13Z"
+		},
+		{
+			"path": "tensorflow/core/example",
+			"revision": ""
 		}
 	],
 	"rootPath": "github.com/recogni/sorten"
