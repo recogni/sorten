@@ -78,3 +78,17 @@ func SafeMkdir(path string) error {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+
+func CointainsInt(xs []int, x int) bool {
+	if len(xs) == 0 {
+		return true
+	}
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
+}
+
+///////////////////////////////////////////////////////////////////////////////

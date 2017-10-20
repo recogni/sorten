@@ -237,8 +237,6 @@ func jpegToTfRecordWorker(workerId int, commonMap map[string]interface{}, fileq 
 			fname := j2tfFactory.GetNextTfRecordName(CLI.recordPrefix)
 			dstfp := strings.Join([]string{CLI.outputDir, fname}, string(filepath.Separator))
 			status = newJpegToTfRecordStatus(workerId, dstfp)
-
-			wl.Log(workerId, "Got a new record (%s)", status.tfdst)
 		}
 
 		wl.Log(workerId, "got file from queue: %s", file)

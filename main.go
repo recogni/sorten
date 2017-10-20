@@ -13,10 +13,12 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/recogni/sorten/logger"
+
 	"github.com/recogni/sorten/jobs/explode"
 	"github.com/recogni/sorten/jobs/h2j"
+	"github.com/recogni/sorten/jobs/implode"
 	"github.com/recogni/sorten/jobs/j2tf"
-	"github.com/recogni/sorten/logger"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -54,6 +56,8 @@ func main() {
 		err = j2tf.RunJob(numWorkers, args, wl)
 	case "explode", "exp", "split":
 		err = explode.RunJob(numWorkers, args, wl)
+	case "implode", "imp", "merge":
+		err = implode.RunJob(numWorkers, args, wl)
 	default:
 		err = fmt.Errorf("unknown command %s", cmd)
 	}
@@ -61,8 +65,6 @@ func main() {
 		wl.Error(err)
 	}
 	fatalOnErr(err)
-
-	// wl.Status("Done!")
 }
 
 ////////////////////////////////////////////////////////////////////////////////
