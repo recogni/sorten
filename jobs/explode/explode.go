@@ -50,12 +50,12 @@ var (
 
 type AtomicClassNamer struct {
 	*sync.RWMutex
-	m map[int64]int
+	m map[int]int
 }
 
 // GetNextIndexForClass returns the next valid integer value for the next tf
 // record to be named in a given directory of said `id`.
-func (a *AtomicClassNamer) GetNextIndexForClass(id int64) int {
+func (a *AtomicClassNamer) GetNextIndexForClass(id int) int {
 	a.Lock()
 	defer a.Unlock()
 
@@ -70,29 +70,44 @@ func (a *AtomicClassNamer) GetNextIndexForClass(id int64) int {
 
 var acn = &AtomicClassNamer{
 	RWMutex: &sync.RWMutex{},
-	m:       map[int64]int{},
+	m:       map[int]int{},
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-func emitTfRecord(workerId int, file string, class int64, rec *tf.Features, wl *logger.WorkerLogger) error {
-	wl.Log(workerId, "Got emit record for class %d (%s)\n", class, file)
+func filterIncludesClass(classes []int, class int) bool {
+	if len(classes) == 0 {
+		return true
+	}
+	for _, v := range classes {
+		if v == class {
+			return true
+		}
+	}
+	return false
+}
 
-	if gcloud.IsBucketPath(CLI.outputDir) {
-		// TODO: Handle me
-		panic("handle bucket path enabled emit")
+func emitTfRecord(workerId int, file string, class int, rec *tf.Features, wl *logger.WorkerLogger) error {
+	wl.Log(workerId, "Got emit record for class %d (%s)\n", class, file)
+	if !filterIncludesClass(CLI.classes, class) {
+		return nil
 	}
 
 	outFileName := fmt.Sprintf("%05d.tfrecord", acn.GetNextIndexForClass(class))
 	outItems := []string{CLI.outputDir, fmt.Sprintf("class_%05d", class), outFileName}
-
 	outDir := strings.Join(outItems[:2], string(filepath.Separator))
-	if err := jobs.SafeMkdir(outDir); err != nil {
-		return err
+	outFile := strings.Join(outItems, string(filepath.Separator))
+
+	destination := outFile
+	if gcloud.IsBucketPath(CLI.outputDir) {
+		destination = path.Join(os.TempDir(), fmt.Sprintf("worker_%d.tfrecord", workerId))
+	} else {
+		if err := jobs.SafeMkdir(outDir); err != nil {
+			return err
+		}
 	}
 
-	outFile := strings.Join(outItems, string(filepath.Separator))
-	w, err := tfutils.NewWriter(outFile, nil)
+	w, err := tfutils.NewWriter(destination, nil)
 	if err != nil {
 		return err
 	}
@@ -103,7 +118,26 @@ func emitTfRecord(workerId int, file string, class int64, rec *tf.Features, wl *
 		return err
 	}
 
-	return w.WriteRecord(bs)
+	err = w.WriteRecord(bs)
+	if err != nil {
+		return err
+	}
+
+	// Need to upload the file to the bucket destination.
+	if destination != outFile {
+		bp, err := gcloud.NewBucketPath(outFile)
+		if err != nil {
+			return err
+		}
+
+		bm, err := gcloud.GetBucketManager(bp.Bucket)
+		if err != nil {
+			return err
+		}
+		return bm.BucketUploadFile(bp, destination)
+	}
+
+	return nil
 }
 
 func explodeTfWorker(workerId int, q <-chan string, wg *sync.WaitGroup, wl *logger.WorkerLogger) {
@@ -153,7 +187,7 @@ func explodeTfWorker(workerId int, q <-chan string, wg *sync.WaitGroup, wl *logg
 					if il, ok := v.Kind.(*tf.Feature_Int64List); ok {
 						vs := il.Int64List.Value
 						if len(vs) > 0 {
-							if err := emitTfRecord(workerId, file, vs[0], rec, wl); err != nil {
+							if err := emitTfRecord(workerId, file, int(vs[0]), rec, wl); err != nil {
 								wl.Log(workerId, "Error: unable to emit record (%s). Error: %s", file, err.Error())
 							}
 						}
