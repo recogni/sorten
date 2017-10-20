@@ -250,6 +250,10 @@ func RunJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
 		go explodeTfWorker(wId, fileq, &wg, wl)
 	}
 
+	// TODO: SHABA_BOILERPLATE_ITERATOR
+	// The below code is SUPER boilerplate! and can be abstracted out fi the
+	// signature for the worker queue is identical (which it should be ... )
+
 	// Read all relevant files and kick off work to the workers.
 	if gcloud.IsBucketPath(CLI.inputDir) {
 		bp, err := gcloud.NewBucketPath(CLI.inputDir)

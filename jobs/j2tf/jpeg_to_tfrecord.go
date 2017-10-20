@@ -334,6 +334,9 @@ func RunJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
 		go jpegToTfRecordWorker(wId, commonMap, fileq, &wg, wl)
 	}
 
+	// TODO: SHABA_BOILERPLATE_ITERATOR
+	// The below code is SUPER boilerplate! and can be abstracted out fi the
+	// signature for the worker queue is identical (which it should be ... )
 	if gcloud.IsBucketPath(CLI.inputDir) {
 		bp, err := gcloud.NewBucketPath(CLI.inputDir)
 		if err != nil {
