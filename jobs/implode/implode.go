@@ -9,11 +9,12 @@ package implode
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"google.golang.org/api/iterator"
 
@@ -44,6 +45,32 @@ var (
 
 ////////////////////////////////////////////////////////////////////////////////
 
+// implodeMapper keeps track of the number of class directories and for each one
+// stores a list of not-yet used files.  Once either a directory is empty or if
+// the max count is hit for a given class, it will be removed from the map.
+type implodeMapper struct {
+	*sync.RWMutex
+	m map[string][]string
+}
+
+func newImplodeMapper() (*implodeMapper, error) {
+	return &implodeMapper{
+		RWMutex: &sync.RWMutex{},
+		m:       map[string][]string{},
+	}, nil
+}
+
+func (im *implodeMapper) AddFile(basePath, filePath string) error {
+	fmt.Printf("BASE PATH: %s\n", basePath)
+	fmt.Printf("FILE PATH: %s\n", filePath)
+	relPath, err := filepath.Rel(basePath, filePath)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("REL  PATH: %s\n", relPath)
+	return nil
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 func emitTfRecord(workerId int, file string, class int, rec *tf.Features, wl *logger.WorkerLogger) error {
@@ -56,19 +83,20 @@ func implodeTfWorker(workerId int, q <-chan string, wg *sync.WaitGroup, wl *logg
 
 	// Tag the wait group since we are a new worker ready to go!
 	wl.Log(workerId, "is ready for work!")
-	for {
-
-	}
+	// for {
+	time.Sleep(1000 * time.Second)
+	// }
 
 	// File queue is exhausted, we are done!
 	wl.Log(workerId, "Worker is now done")
 	wg.Done()
 }
 
-func queueFileForWorker(q chan<- string, fp string) {
-	if strings.ToLower(path.Ext(fp)) == ".tfrecord" {
-		q <- fp
-	}
+func queueFileForWorker(im *implodeMapper, q chan<- string, fp string) {
+	im.AddFile(CLI.outputDir, fp)
+	// if strings.ToLower(path.Ext(fp)) == ".tfrecord" {
+	// 	q <- fp
+	// }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -107,6 +135,12 @@ func RunJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
 	// Create synchronization primitives.
 	var wg sync.WaitGroup
 	fileq := make(chan string, CLI.numWorkers)
+
+	// Make an implode mapper.
+	im, err := newImplodeMapper()
+	if err != nil {
+		return err
+	}
 
 	// Create workers, each one is responsible for decrementing his waitgroup
 	// after it has exhausted the work queue.
@@ -148,7 +182,7 @@ func RunJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
 			}
 
 			fp := "gs://" + strings.Join([]string{bp.Bucket, attrs.Name}, string(filepath.Separator))
-			queueFileForWorker(fileq, fp)
+			queueFileForWorker(im, fileq, fp)
 
 			c += 1
 			wl.Status("found %d files so far ...", c)
@@ -159,7 +193,7 @@ func RunJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
 			if err != nil {
 				wl.Status("Warning found error walking dir. Error: %s", err.Error())
 			} else {
-				queueFileForWorker(fileq, fp)
+				queueFileForWorker(im, fileq, fp)
 			}
 			return nil
 		})

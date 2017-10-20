@@ -80,16 +80,17 @@ func (wl *WorkerLogger) Start() {
 		select {
 		case newHdr := <-wl.hdrCh:
 			hdr = newHdr
-			fmt.Println(hdr)
+			// fmt.Println(hdr)
 		case wMsg := <-wl.msgCh:
 			wms[wMsg.index] = wMsg.msg
-			fmt.Println(wMsg.msg)
+			// fmt.Println(wMsg.msg)
 		case <-wl.doneCh:
 			return
 		case err := <-wl.errCh:
 			hdr = fmt.Sprintf("Error: %s", err.Error())
 		}
-		_ = repaint
+		// _ = repaint
+		repaint()
 	}
 }
 
