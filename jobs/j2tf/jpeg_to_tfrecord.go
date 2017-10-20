@@ -326,7 +326,7 @@ func RunJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
 	// Once all files have been loaded, or when the job count is hit for a job
 	// worker, it is responsible for closing the record writer and asking for a
 	// new output file provided there is more work to do.
-	fileq := make(chan string, CLI.numWorkers*1)
+	fileq := make(chan string, CLI.numWorkers)
 
 	// Create the workers based on how many CPU cores the system has.
 	for wId := 0; wId < CLI.numWorkers; wId++ {

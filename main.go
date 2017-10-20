@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/recogni/sorten/jobs/explode"
 	"github.com/recogni/sorten/jobs/h2j"
 	"github.com/recogni/sorten/jobs/j2tf"
 	"github.com/recogni/sorten/logger"
@@ -51,6 +52,8 @@ func main() {
 		err = h2j.RunJob(numWorkers, args, wl)
 	case "j2tf":
 		err = j2tf.RunJob(numWorkers, args, wl)
+	case "explode", "exp", "split":
+		err = explode.RunJob(numWorkers, args, wl)
 	default:
 		err = fmt.Errorf("unknown command %s", cmd)
 	}
