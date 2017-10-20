@@ -53,7 +53,7 @@ func (wl *WorkerLogger) Status(format string, a ...interface{}) {
 }
 
 func (wl *WorkerLogger) Error(err error) {
-	wl.errCh <- err
+	// wl.errCh <- err
 }
 
 func (wl *WorkerLogger) Close() {

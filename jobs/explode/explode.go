@@ -11,18 +11,24 @@ package explode
 import (
 	"errors"
 	"flag"
+	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
+
+	// "time"
+
+	"google.golang.org/api/iterator"
 
 	"github.com/recogni/sorten/gcloud"
 	"github.com/recogni/sorten/jobs"
 	"github.com/recogni/sorten/logger"
 
-	"google.golang.org/api/iterator"
+	"github.com/recogni/tfutils"
+	tf "tensorflow/core/example"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -42,17 +48,124 @@ var (
 
 ////////////////////////////////////////////////////////////////////////////////
 
+type AtomicClassNamer struct {
+	*sync.RWMutex
+	m map[int64]int
+}
+
+// GetNextIndexForClass returns the next valid integer value for the next tf
+// record to be named in a given directory of said `id`.
+func (a *AtomicClassNamer) GetNextIndexForClass(id int64) int {
+	a.Lock()
+	defer a.Unlock()
+
+	if count, ok := a.m[id]; ok {
+		a.m[id] += 1
+		return count
+	}
+
+	a.m[id] = 1
+	return 0
+}
+
+var acn = &AtomicClassNamer{
+	RWMutex: &sync.RWMutex{},
+	m:       map[int64]int{},
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+func emitTfRecord(workerId int, file string, class int64, rec *tf.Features, wl *logger.WorkerLogger) error {
+	wl.Log(workerId, "Got emit record for class %d (%s)\n", class, file)
+
+	if gcloud.IsBucketPath(CLI.outputDir) {
+		// TODO: Handle me
+		panic("handle bucket path enabled emit")
+	}
+
+	outFileName := fmt.Sprintf("%05d.tfrecord", acn.GetNextIndexForClass(class))
+	outItems := []string{CLI.outputDir, fmt.Sprintf("class_%05d", class), outFileName}
+
+	outDir := strings.Join(outItems[:2], string(filepath.Separator))
+	if err := jobs.SafeMkdir(outDir); err != nil {
+		return err
+	}
+
+	outFile := strings.Join(outItems, string(filepath.Separator))
+	w, err := tfutils.NewWriter(outFile, nil)
+	if err != nil {
+		return err
+	}
+	defer w.Close()
+
+	bs, err := tfutils.GetTFRecordStringForFeatures(rec)
+	if err != nil {
+		return err
+	}
+
+	return w.WriteRecord(bs)
+}
+
 func explodeTfWorker(workerId int, q <-chan string, wg *sync.WaitGroup, wl *logger.WorkerLogger) {
-	// Tag the wait group since we are a new worker ready to go!
 	wg.Add(1)
 
+	// Tag the wait group since we are a new worker ready to go!
 	wl.Log(workerId, "is ready for work!")
 	for file := range q {
-		wl.Log(workerId, "GOT FILE: %s", file)
-		time.Sleep(1 * time.Second)
+		source := file
+		if gcloud.IsBucketPath(file) {
+			source = path.Join(os.TempDir(), fmt.Sprintf("worker_%d_input.tfrecord", workerId))
+			bp, _ := gcloud.NewBucketPath(file)
+			bm, _ := gcloud.GetBucketManager(bp.Bucket)
+
+			wl.Log(workerId, "attempting to download %s -> %s", file, source)
+			if err := bm.BucketDownloadFile(source, bp); err != nil {
+				wl.Log(workerId, "Warning: unable to download %s from bucket, error: %s", file, err.Error())
+			} else {
+				wl.Log(workerId, "download successful!")
+			}
+		}
+
+		// `source` points to the file (either downloaded from gs:// or actual).
+		r, err := tfutils.NewReader([]string{source}, nil)
+		if err != nil {
+			wl.Log(workerId, "Error: unable to read tfrecord file. Error: %s", err.Error())
+			continue
+		}
+
+		for {
+			rbs, err := r.ReadRecord()
+			if err == io.EOF {
+				break
+			} else if err != nil {
+				wl.Log(workerId, "Error: unable to read from the reader. Error: %s", err.Error())
+				continue
+			}
+
+			rec, err := tfutils.GetFeatureMapFromTFRecord(rbs)
+			if err != nil {
+				wl.Log(workerId, "Error: unable to convert into feature. Error: %s", err.Error())
+				continue
+			}
+
+			for k, v := range rec.Feature {
+				if k == "image/class/label" {
+					if il, ok := v.Kind.(*tf.Feature_Int64List); ok {
+						vs := il.Int64List.Value
+						if len(vs) > 0 {
+							if err := emitTfRecord(workerId, file, vs[0], rec, wl); err != nil {
+								wl.Log(workerId, "Error: unable to emit record (%s). Error: %s", file, err.Error())
+							}
+						}
+					}
+					break
+				}
+			}
+		}
 	}
 
 	// File queue is exhausted, we are done!
+	wl.Log(workerId, "Worker is now done")
 	wg.Done()
 }
 
@@ -70,6 +183,7 @@ func RunJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
 	fs.StringVar(&CLI.inputDir, "input", "", "input directory to read images from")
 	fs.StringVar(&CLI.outputDir, "output", "", "output directory to write images to")
 	fs.StringVar(&CLI.filter, "filter", "", "specify classes to include, empty == include all")
+	fs.Parse(args)
 
 	// Validate input arguments.
 	if len(CLI.inputDir) == 0 {
@@ -151,6 +265,12 @@ func RunJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
 			return err
 		}
 	}
+
+	// Done feeding work, file queue should be closed.
+	close(fileq)
+
+	// Wait for all the records to finish getting written.
+	wg.Wait()
 
 	return nil
 }

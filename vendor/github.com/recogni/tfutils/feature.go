@@ -55,15 +55,10 @@ func GetTFRecordStringForFeatures(fs *tf.Features) ([]byte, error) {
 	return proto.Marshal(ex)
 }
 
-func GetFeatureMapFromTFRecord(data []byte) (map[string]interface{}, error) {
-	m := map[string]interface{}{}
+func GetFeatureMapFromTFRecord(data []byte) (*tf.Features, error) {
 	ex := tf.Example{}
 	if err := proto.Unmarshal(data, &ex); err != nil {
 		return nil, err
 	}
-
-	for k, v := range ex.Features.Feature {
-		fmt.Printf("KEY: %s VAL: %#v\n", k, v)
-	}
-	return m, nil
+	return ex.Features, nil
 }
