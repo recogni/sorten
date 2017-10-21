@@ -77,7 +77,7 @@ var acn = &AtomicClassNamer{
 
 func emitTfRecord(workerId int, file string, class int, rec *tf.Features, wl *logger.WorkerLogger) error {
 	wl.Log(workerId, "Got emit record for class %d (%s)\n", class, file)
-	if !jobs.CointainsInt(CLI.classes, class) {
+	if !jobs.RangeContainsClass(CLI.classes, class) {
 		return nil
 	}
 
