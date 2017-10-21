@@ -12,6 +12,12 @@ import (
 
 ////////////////////////////////////////////////////////////////////////////////
 
+const (
+	disableGoTerm = true // false
+)
+
+////////////////////////////////////////////////////////////////////////////////
+
 // workerMsg represents the worker index as well as the message payload sent
 // by said worker.
 type workerMsg struct {
@@ -80,17 +86,23 @@ func (wl *WorkerLogger) Start() {
 		select {
 		case newHdr := <-wl.hdrCh:
 			hdr = newHdr
-			// fmt.Println(hdr)
+			if disableGoTerm {
+				fmt.Println(hdr)
+			}
 		case wMsg := <-wl.msgCh:
 			wms[wMsg.index] = wMsg.msg
-			// fmt.Println(wMsg.msg)
+			if disableGoTerm {
+				fmt.Println(wMsg.msg)
+			}
 		case <-wl.doneCh:
 			return
 		case err := <-wl.errCh:
 			hdr = fmt.Sprintf("Error: %s", err.Error())
 		}
-		// _ = repaint
-		repaint()
+
+		if !disableGoTerm {
+			repaint()
+		}
 	}
 }
 

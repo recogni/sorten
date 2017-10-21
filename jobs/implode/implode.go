@@ -10,8 +10,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -45,30 +47,105 @@ var (
 
 ////////////////////////////////////////////////////////////////////////////////
 
+type fileList struct {
+	front []string // buffer of unused files to pick from
+	back  []string // back buffer of files that have been used so far
+	popct int      // number of times pop has been called on this list
+}
+
+func newFileList() *fileList {
+	return &fileList{
+		front: []string{},
+		back:  []string{},
+		popct: 0,
+	}
+}
+
+func (fl *fileList) Append(f string) {
+	fl.front = append(fl.front, f)
+}
+
+func (fl *fileList) PopRandom() string {
+	if len(fl.front) == 0 && len(fl.back) == 0 {
+		return ""
+	}
+
+	if len(fl.front) == 0 {
+		fmt.Printf("Swapping lists...\n")
+		fl.front = fl.back[:len(fl.back)]
+		fl.back = []string{}
+	}
+
+	x := rand.Intn(len(fl.front))
+	s := fl.front[x]
+	fl.back = append(fl.back, s)
+	fl.front = append(fl.front[:x], fl.front[x+1:]...)
+	fl.popct += 1
+	return s
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 // implodeMapper keeps track of the number of class directories and for each one
 // stores a list of not-yet used files.  Once either a directory is empty or if
 // the max count is hit for a given class, it will be removed from the map.
 type implodeMapper struct {
 	*sync.RWMutex
-	m map[string][]string
+	wl *logger.WorkerLogger
+	m  map[int]*fileList
 }
 
-func newImplodeMapper() (*implodeMapper, error) {
+func newImplodeMapper(wl *logger.WorkerLogger) (*implodeMapper, error) {
 	return &implodeMapper{
 		RWMutex: &sync.RWMutex{},
-		m:       map[string][]string{},
+		wl:      wl,
+		m:       map[int]*fileList{},
 	}, nil
 }
 
-func (im *implodeMapper) AddFile(basePath, filePath string) error {
-	fmt.Printf("BASE PATH: %s\n", basePath)
-	fmt.Printf("FILE PATH: %s\n", filePath)
-	relPath, err := filepath.Rel(basePath, filePath)
-	if err != nil {
-		return err
+func (im *implodeMapper) DumpMap() {
+	// im.RLock()
+	// defer im.RUnlock()
+
+	// for k, fl := range im.m {
+	// 	fmt.Printf("Found key: %d with %d items:\n", k, len(fl.front))
+	// 	for i := 0; i < 200; i++ {
+	// 		fmt.Printf("  %d -- pop'd: %s\n", i, fl.PopRandom())
+	// 	}
+	// 	fmt.Printf("  Total pop count: %d\n", fl.popct)
+	// }
+}
+
+func (im *implodeMapper) AddFile(outDir, inDir, filePath string) error {
+	if strings.HasPrefix(filePath, inDir) {
+		subPath := filePath[len(inDir):]
+		if strings.HasPrefix(subPath, "/") {
+			subPath = subPath[1:]
+		}
+		items := strings.Split(subPath, "/")
+		if len(items) == 2 {
+			class, _ := items[0], items[1]
+			if strings.HasPrefix(class, "class_") {
+				class = class[len("class_"):]
+			}
+
+			cv, err := strconv.ParseInt(class, 10, 32)
+			if err != nil {
+				return err
+			}
+
+			im.Lock()
+			defer im.Unlock()
+
+			if _, ok := im.m[int(cv)]; !ok {
+				im.m[int(cv)] = newFileList()
+			}
+			im.m[int(cv)].Append(filePath)
+		}
 	}
-	fmt.Printf("REL  PATH: %s\n", relPath)
-	return nil
+
+	// No-op - filePath always should begin with inDir
+	return fmt.Errorf("%s is an invalid input file path", filePath)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -84,7 +161,7 @@ func implodeTfWorker(workerId int, q <-chan string, wg *sync.WaitGroup, wl *logg
 	// Tag the wait group since we are a new worker ready to go!
 	wl.Log(workerId, "is ready for work!")
 	// for {
-	time.Sleep(1000 * time.Second)
+	time.Sleep(10 * time.Second)
 	// }
 
 	// File queue is exhausted, we are done!
@@ -93,7 +170,7 @@ func implodeTfWorker(workerId int, q <-chan string, wg *sync.WaitGroup, wl *logg
 }
 
 func queueFileForWorker(im *implodeMapper, q chan<- string, fp string) {
-	im.AddFile(CLI.outputDir, fp)
+	im.AddFile(CLI.outputDir, CLI.inputDir, fp)
 	// if strings.ToLower(path.Ext(fp)) == ".tfrecord" {
 	// 	q <- fp
 	// }
@@ -137,7 +214,7 @@ func RunJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
 	fileq := make(chan string, CLI.numWorkers)
 
 	// Make an implode mapper.
-	im, err := newImplodeMapper()
+	im, err := newImplodeMapper(wl)
 	if err != nil {
 		return err
 	}
@@ -202,6 +279,8 @@ func RunJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
 		}
 	}
 
+	im.DumpMap()
+
 	// Done feeding work, file queue should be closed.
 	close(fileq)
 
@@ -209,6 +288,12 @@ func RunJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
 	wg.Wait()
 
 	return nil
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+func init() {
+	rand.Seed(time.Now().Unix())
 }
 
 ////////////////////////////////////////////////////////////////////////////////

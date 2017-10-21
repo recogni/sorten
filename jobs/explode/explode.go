@@ -194,9 +194,9 @@ func explodeTfWorker(workerId int, q <-chan string, wg *sync.WaitGroup, wl *logg
 }
 
 func queueFileForWorker(q chan<- string, fp string) {
-	if strings.ToLower(path.Ext(fp)) == ".tfrecord" {
-		q <- fp
-	}
+	// if strings.ToLower(path.Ext(fp)) == ".tfrecord" {
+	q <- fp
+	// }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
