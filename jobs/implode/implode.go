@@ -191,7 +191,13 @@ func (iw *implodeTfWriter) AddFile(class int, file string) error {
 		}
 	}
 
-	bs, err := ioutil.ReadFile(sourceFile)
+	r, err := tfutils.NewReader([]string{sourceFile}, nil)
+	if err != nil {
+		return err
+	}
+
+	// Read the very first record - there should only be one since we are about to implode.
+	bs, err := r.ReadRecord()
 	if err != nil {
 		return err
 	}
@@ -378,6 +384,11 @@ func implodeTfWorker(workerId int, q <-chan *Job, wg *sync.WaitGroup, wl *logger
 		wl.Log(workerId, "is now idle")
 	}
 
+	if writer != nil {
+		writer.Flush()
+		writer = nil
+	}
+
 	// File queue is exhausted, we are done!
 	wl.Log(workerId, "Worker is now done")
 	wg.Done()
@@ -393,7 +404,7 @@ func RunJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
 	fs.StringVar(&CLI.prefix, "prefix", "", "output prefix for any files created")
 	fs.StringVar(&CLI.filter, "filter", "", "specify classes to include, empty => include all")
 	fs.IntVar(&CLI.shardSize, "shard-size", 1, "number of records per .tfrecord file")
-	fs.IntVar(&CLI.maxCount, "max-count", 0, "maximum number of images per class, 0 => include all")
+	fs.IntVar(&CLI.maxCount, "max-count", 1000, "maximum number of images per class")
 	fs.Parse(args)
 
 	// Validate input arguments.
