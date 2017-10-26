@@ -86,7 +86,7 @@ func hdrToJpegWorker(workerId int, jobs <-chan *hdrToJpegJob, wg *sync.WaitGroup
 		// 1. Convert from HDR -> TIFF using luminance-hdr-cli
 		tempFile := path.Join(os.TempDir(), fmt.Sprintf("worker_%d_temporary.tiff", workerId))
 		wl.Log(workerId, "converting HDR -> TIFF %s -> %s", source, tempFile)
-		cmd0 := exec.Command(path.Join(CLI.lumiBins, "luminance-hdr-cli"), "-l", source, "-q", "100", "-t", "durand", "-o", tempFile)
+		cmd0 := exec.Command(path.Join(CLI.lumiBins, "luminance-hdr-cli"), "-l", source, "-t", "durand", "-o", tempFile)
 		if _, err := cmd0.CombinedOutput(); err != nil {
 			wl.Log(workerId, "Warning: `luminance-hdr-cli %s %s` had error: %s", source, tempFile, err.Error())
 		} else {
