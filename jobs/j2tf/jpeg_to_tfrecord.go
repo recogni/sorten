@@ -271,7 +271,7 @@ func jpegToTfRecordWorker(workerId int, commonMap map[string]interface{}, fileq 
 // for, it will queue it to the buffered channel of files to translate into a
 // TFRecord.
 func queueFileForJpegToTfRecordJob(fileq chan string, fp string) {
-	if strings.ToLower(path.Ext(fp)) == ".jpeg" {
+	if strings.ToLower(path.Ext(fp)) == ".jpeg" || strings.ToLower(path.Ext(fp)) == ".jpg" {
 		// HACK: Ignore files with _empty_ in them
 		if !strings.Contains(fp, "_empty_") {
 			fileq <- fp
