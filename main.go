@@ -73,6 +73,9 @@ func init() {
 	log.SetPrefix("")
 	log.SetFlags(0)
 	log.SetOutput(os.Stdout)
+
+	// TODO: Each component needs a chance to verify that it is installed
+	// correctly if it is run.
 }
 
 ////////////////////////////////////////////////////////////////////////////////

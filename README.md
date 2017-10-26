@@ -14,7 +14,23 @@ $ go get github.com/recogni/sorten
 
 Or grab the latest release from the [releases](https://github.com/recogni/sorten/releases) section.
 
+The following additional CLI tools will also be required to run some of the image conversion jobs:
+
+`imagemagick`:
+
 You will also need `imagemagick` installed on your system.  Modern versions of imagemagick will break apart the binary into separate sub-components like `convert`, `compose` and so on.  If you have installed this to a non-standard path, you can set the path to the binaries using the `--magic` option in the command line.
+```
+brew install imagemagick
+```
+
+`luminence-hdr`
+
+This is needed to apply the correct and appropriate tonemapping operator on the input HDR images, which will then give us losless 8-bit tiff images. From here we use `imagemagick` to convert again into jpeg.
+Here is an interesting discussion on tonemapping: http://osp.wikidot.com/parameters-for-photographers.
+
+Note: On OSX 10.9 you will need an older (2.2.1) version of this program.
+
+http://qtpfsgui.sourceforge.net/?page_id=10
 
 ## Cross compile
 
