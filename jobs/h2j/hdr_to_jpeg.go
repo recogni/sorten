@@ -30,10 +30,10 @@ var (
 		outputDir  string
 		magickBins string
 		lumiBins   string
+		numWorkers int
 
 		// Private stuff
 		useImageMagick bool
-		numWorkers     int
 	}{}
 )
 
@@ -95,7 +95,7 @@ func hdrToJpegWorker(workerId int, jobs <-chan *hdrToJpegJob, wg *sync.WaitGroup
 
 		// 2. Convert from TIFF -> JPEG using image-magick
 		wl.Log(workerId, "converting TIFF -> JPEG %s -> %s", tempFile, destination)
-		cmd1 := exec.Command(path.Join(CLI.magickBins, "convert"), tempFile, "-quality", "100", destination)
+		cmd1 := exec.Command(path.Join(CLI.magickBins, "convert"), tempFile /*"-quality", "100",*/, "-colorspace", "RGB", destination)
 		if _, err := cmd1.CombinedOutput(); err != nil {
 			wl.Log(workerId, "Warning: `convert %s %s` had error: %s", tempFile, destination, err.Error())
 		} else {
@@ -154,6 +154,7 @@ func RunJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
 	fs.StringVar(&CLI.outputDir, "output", "", "output directory to read images from")
 	fs.StringVar(&CLI.magickBins, "magic", "/usr/local/bin/", "path to imagemagick binaries")
 	fs.StringVar(&CLI.lumiBins, "luminance", "/usr/local/bin/", "path to luminance-hdr binaries")
+	fs.IntVar(&CLI.numWorkers, "workers", nworkers, "number of workers to use (default == num cpus)")
 	fs.Parse(args)
 
 	if len(CLI.inputDir) == 0 {
@@ -175,7 +176,6 @@ func RunJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
 	if _, err := os.Stat(path.Join(CLI.lumiBins, "luminance-hdr-cli")); os.IsNotExist(err) {
 		return errors.New("Luminance-hdr not correctly installed! luminance-hdr-cli missing!")
 	}
-	CLI.numWorkers = nworkers
 
 	// Create a channel for the variable number of jobs to run.
 	jobs := make(chan *hdrToJpegJob)
