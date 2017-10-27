@@ -83,19 +83,21 @@ func hdrToJpegWorker(workerId int, jobs <-chan *hdrToJpegJob, wg *sync.WaitGroup
 			}
 		}
 
-		// 1. Convert from HDR -> TIFF using luminance-hdr-cli
-		tempFile := path.Join(os.TempDir(), fmt.Sprintf("worker_%d_temporary.tiff", workerId))
-		wl.Log(workerId, "converting HDR -> TIFF %s -> %s", source, tempFile)
-		cmd0 := exec.Command(path.Join(CLI.lumiBins, "luminance-hdr-cli"), "-l", source, "-t", "durand", "-o", tempFile)
-		if _, err := cmd0.CombinedOutput(); err != nil {
-			wl.Log(workerId, "Warning: `luminance-hdr-cli %s %s` had error: %s", source, tempFile, err.Error())
-		} else {
-			wl.Log(workerId, "conversion successful!")
-		}
+		// // 1. Convert from HDR -> TIFF using luminance-hdr-cli
+		// tempFile := path.Join(os.TempDir(), fmt.Sprintf("worker_%d_temporary.tiff", workerId))
+		// wl.Log(workerId, "converting HDR -> TIFF %s -> %s", source, tempFile)
+		// cmd0 := exec.Command(path.Join(CLI.lumiBins, "luminance-hdr-cli"), "-l", source, "-t", "durand", "-o", tempFile)
+		// if _, err := cmd0.CombinedOutput(); err != nil {
+		// 	wl.Log(workerId, "Warning: `luminance-hdr-cli %s %s` had error: %s", source, tempFile, err.Error())
+		// } else {
+		// 	wl.Log(workerId, "conversion successful!")
+		// }
 
 		// 2. Convert from TIFF -> JPEG using image-magick
-		wl.Log(workerId, "converting TIFF -> JPEG %s -> %s", tempFile, destination)
-		cmd1 := exec.Command(path.Join(CLI.magickBins, "convert"), tempFile /*"-quality", "100",*/, "-colorspace", "RGB", destination)
+		// wl.Log(workerId, "converting TIFF -> JPEG %s -> %s", tempFile, destination)
+
+		// Convert from HDR -> JPEG
+		cmd1 := exec.Command(path.Join(CLI.magickBins, "convert"), source /*"-quality", "100",*/, "-colorspace", "RGB", destination)
 		if _, err := cmd1.CombinedOutput(); err != nil {
 			wl.Log(workerId, "Warning: `convert %s %s` had error: %s", tempFile, destination, err.Error())
 		} else {
