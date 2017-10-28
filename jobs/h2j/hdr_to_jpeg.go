@@ -78,7 +78,7 @@ func hdrToJpegWorker(workerId int, jobs <-chan *hdrToJpegJob, wg *sync.WaitGroup
 				if err := os.MkdirAll(dir, 0755); err != nil {
 					// TODO: This should be done from a mutex :)
 					// TODO: Ignore this error for now
-					// return err
+					wl.Error(err)
 				}
 			}
 		}
@@ -99,7 +99,7 @@ func hdrToJpegWorker(workerId int, jobs <-chan *hdrToJpegJob, wg *sync.WaitGroup
 		// Convert from HDR -> JPEG
 		cmd1 := exec.Command(path.Join(CLI.magickBins, "convert"), source /*"-quality", "100",*/, "-colorspace", "RGB", destination)
 		if _, err := cmd1.CombinedOutput(); err != nil {
-			wl.Log(workerId, "Warning: `convert %s %s` had error: %s", tempFile, destination, err.Error())
+			wl.Log(workerId, "Warning: `convert %s %s` had error: %s", source, destination, err.Error())
 		} else {
 			wl.Log(workerId, "conversion successful!")
 		}
