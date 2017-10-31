@@ -175,9 +175,9 @@ func RunJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
 	if _, err := os.Stat(path.Join(CLI.magickBins, "convert")); os.IsNotExist(err) {
 		return errors.New("Imagemagick not correctly installed! convert utility missing!")
 	}
-	if _, err := os.Stat(path.Join(CLI.lumiBins, "luminance-hdr-cli")); os.IsNotExist(err) {
-		return errors.New("Luminance-hdr not correctly installed! luminance-hdr-cli missing!")
-	}
+	// if _, err := os.Stat(path.Join(CLI.lumiBins, "luminance-hdr-cli")); os.IsNotExist(err) {
+	// 	return errors.New("Luminance-hdr not correctly installed! luminance-hdr-cli missing!")
+	// }
 
 	// Create a channel for the variable number of jobs to run.
 	jobs := make(chan *hdrToJpegJob)

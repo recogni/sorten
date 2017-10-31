@@ -31,6 +31,7 @@ var (
 		inputDir       string
 		outputDir      string
 		recordPrefix   string
+		filenameFilter string
 		filesPerRecord int
 		imageClassId   int
 
@@ -272,8 +273,7 @@ func jpegToTfRecordWorker(workerId int, commonMap map[string]interface{}, fileq 
 // TFRecord.
 func queueFileForJpegToTfRecordJob(fileq chan string, fp string) {
 	if strings.ToLower(path.Ext(fp)) == ".jpeg" || strings.ToLower(path.Ext(fp)) == ".jpg" {
-		// HACK: Ignore files with _empty_ in them
-		if !strings.Contains(fp, "_empty_") {
+		if strings.Contains(fp, CLI.filenameFilter) {
 			fileq <- fp
 		}
 	}
@@ -289,6 +289,7 @@ func RunJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
 	fs.StringVar(&CLI.inputDir, "input", "", "input directory to read images from")
 	fs.StringVar(&CLI.outputDir, "output", "", "output directory to read images from")
 	fs.StringVar(&CLI.recordPrefix, "prefix", "", "tf record name prefix")
+	fs.StringVar(&CLI.filenameFilter, "file-filter", "", "filter to check for in filename (regex?)")
 	fs.IntVar(&CLI.imageClassId, "image-class", 1002, "class to assign tf records to")
 	fs.IntVar(&CLI.filesPerRecord, "shard-size", 1, "number of records per shard")
 	fs.Parse(args)
