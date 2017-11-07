@@ -28,12 +28,19 @@ import (
 var (
 	CLI = struct {
 		// Command line args common to all commands
-		inputDir       string
-		outputDir      string
-		recordPrefix   string
-		filenameFilter string
-		filesPerRecord int
-		imageClassId   int
+		inputDir  string
+		outputDir string
+
+		recordPrefix      string
+		filenameFilter    string
+		filenameBlacklist string
+		filesPerRecord    int
+
+		includeBackground bool
+		backgroundRemap   string
+
+		imageClassId           int
+		imageBackgroundClassId int
 
 		// Private stuff
 		numWorkers int
@@ -168,6 +175,20 @@ func (js *jpegToTfRecordStatus) AddFile(file string, commonFeatures map[string]i
 		imageFeatures[k] = v
 	}
 
+	if CLI.includeBackground {
+		items := strings.Split(CLI.backgroundRemap, ":")
+		if len(items) == 2 {
+			pre, post := items[0], items[1]
+			bgSourceFile := strings.Replace(sourceFile, pre, post, -1)
+			bs, err := ioutil.ReadFile(bgSourceFile)
+			if err == nil {
+				imageFeatures["image/bg_filename"] = strings.Replace(file, pre, post, -1)
+				imageFeatures["image/bg_encoded"] = bs
+				imageFeatures["image/class/bg_label"] = CLI.imageBackgroundClassId
+			}
+		}
+	}
+
 	fs, err := tfutils.GetFeaturesFromMap(imageFeatures)
 	if err != nil {
 		return err
@@ -273,7 +294,7 @@ func jpegToTfRecordWorker(workerId int, commonMap map[string]interface{}, fileq 
 // TFRecord.
 func queueFileForJpegToTfRecordJob(fileq chan string, fp string) {
 	if strings.ToLower(path.Ext(fp)) == ".jpeg" || strings.ToLower(path.Ext(fp)) == ".jpg" {
-		if strings.Contains(fp, CLI.filenameFilter) {
+		if strings.Contains(fp, CLI.filenameFilter) && !strings.Contains(fp, CLI.filenameBlacklist) {
 			fileq <- fp
 		}
 	}
@@ -288,9 +309,13 @@ func RunJob(nworkers int, args []string, wl *logger.WorkerLogger) error {
 	fs := flag.NewFlagSet("JpegToTfRecord", flag.ExitOnError)
 	fs.StringVar(&CLI.inputDir, "input", "", "input directory to read images from")
 	fs.StringVar(&CLI.outputDir, "output", "", "output directory to read images from")
+	fs.BoolVar(&CLI.includeBackground, "include-background", false, "enable including the background image with each image's tf")
+	fs.StringVar(&CLI.backgroundRemap, "background-remap", "_rgb:_empty_rgb", "file pattern to match to potentially find a background")
 	fs.StringVar(&CLI.recordPrefix, "prefix", "", "tf record name prefix")
 	fs.StringVar(&CLI.filenameFilter, "file-filter", "", "filter to check for in filename (regex?)")
+	fs.StringVar(&CLI.filenameBlacklist, "file-blacklist", "_empty_", "opposite of the above (regex?)")
 	fs.IntVar(&CLI.imageClassId, "image-class", 1002, "class to assign tf records to")
+	fs.IntVar(&CLI.imageBackgroundClassId, "background-class", 1003, "class to assign tf records to")
 	fs.IntVar(&CLI.filesPerRecord, "shard-size", 1, "number of records per shard")
 	fs.Parse(args)
 
